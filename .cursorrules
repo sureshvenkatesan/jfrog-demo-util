@@ -1,0 +1,8 @@
+# POC Utility – Python rules
+
+- Use Python 3.9+ style; prefer type hints for public functions and module boundaries.
+- Format with Black-style (4 spaces, double quotes); line length 100.
+- Prefer pathlib.Path over os.path for paths.
+- Tests: pytest in `tests/`; mock all external I/O (HTTP with responses or unittest.mock, subprocess, file reads for config/resources where appropriate).
+- No customer- or vendor-specific names in code, config examples, or resource templates.
+- Package layout: `poc_util` (CLI, config, api, commands, jf_cli, templates); entrypoint `poc-util` or `python -m poc_util`. Build and env: Hatch (hatch build, hatch run test).

@@ -1,0 +1,13 @@
+curl --location 'https://psazuse.jfrog.io/xray/api/v1/webhooks' \
+--header 'Content-Type: application/json' \
+--header 'Authorization: Bearer <jfrog token' \
+--data '{
+    "name": "scanCompleted",
+    "url": "http://jfrog-platform-artifactory-nginx/worker/api/v1/execute/sbom-service",
+    "headers": {
+        "Authorization": "Bearer {platformToken}"
+    },
+    "use_proxy": false,
+    "has_password": false,
+    "is_pwd_updated": ""
+}'
