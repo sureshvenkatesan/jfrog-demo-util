@@ -28,4 +28,8 @@ htmlcov/
 
 # Project (secrets, generated)
 config.yaml
+.env
+.env.*
+!.env.example
 sync_download/
+poc_util/_vendor/
