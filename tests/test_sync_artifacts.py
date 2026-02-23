@@ -34,7 +34,7 @@ def test_run_sync_success(config_file_with_sync, sample_config):
     assert isinstance(call_args[2], Path)
     ul_call = mock_ul.call_args[0]
     assert ul_call[2] == "target-repo"
-    assert ul_call[3] == "ch"
+    assert ul_call[3] == ""  # repo prefix empty so path is repo/8d/c9/... not repo/ch/8d/...
 
 
 def test_run_sync_uses_download_dir_from_config(tmp_path, sample_config):
@@ -56,7 +56,7 @@ def test_run_sync_uses_download_dir_from_config(tmp_path, sample_config):
     assert dl_download_dir == (tmp_path / custom_download).resolve()
     assert (tmp_path / custom_download).exists()
     ul_call = mock_ul.call_args[0]
-    assert ul_call[3] == "ch"
+    assert ul_call[3] == ""
 
 def test_run_sync_fails_when_jf_not_available(config_file_with_sync):
     with patch("poc_util.commands.sync_artifacts.jf_available", return_value=False):

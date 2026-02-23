@@ -65,12 +65,21 @@ def run_sync(
             print("No artifacts to upload (download_dir is empty)")
             return 0
         for entry in entries:
-            repo_subpath = f"{target_path.rstrip('/')}/{entry.name}".lstrip("/") if target_path else entry.name
+            # Dest is repo (and optional target_path) only - jf appends source-relative path,
+            # so "8d/*" -> repo/8d/c9/... not repo/8d/8d/c9/...
+            repo_prefix = target_path.rstrip("/") if target_path else ""
             if verbose:
-                dest = f"{target_repo}/{repo_subpath}/"
-                src = f"{entry}/*" if entry.is_dir() else str(entry)
-                print(f"\n--- jf rt u '{src}' '{dest}' --server-id={target_server_id} --detailed-summary ---")
-            result = ul_fn(target_server_id, entry, target_repo, repo_subpath, verbose=verbose)
+                dest = f"{target_repo}/{repo_prefix}/" if repo_prefix else f"{target_repo}/"
+                src = f"{entry.name}/*" if entry.is_dir() else entry.name
+                print(f"\n--- jf rt u '{src}' '{dest}' --server-id={target_server_id} (cwd={download_dir}) --detailed-summary ---")
+            result = ul_fn(
+                target_server_id,
+                entry.name,
+                target_repo,
+                repo_prefix,
+                verbose=verbose,
+                cwd=download_dir,
+            )
             if verbose:
                 if result.stdout:
                     print(result.stdout)

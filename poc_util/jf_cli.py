@@ -45,15 +45,24 @@ def jf_rt_ul(
     target_path: str = "",
     *,
     verbose: bool = False,
+    cwd: str | Path | None = None,
     _run: object | None = None,
 ) -> subprocess.CompletedProcess:
-    """Run: jf rt u <local_path_or_pattern> <target_repo>/<target_path> --server-id=<id>."""
+    """Run: jf rt u <local_path_or_pattern> <target_repo>/<target_path> --server-id=<id>.
+
+    If cwd is set, run from that directory so the source pattern is relative and the
+    artifact path in the repo does not include the full local filesystem path.
+    """
     dest = f"{target_repo}/"
     if target_path:
         dest = f"{target_repo}/{target_path.rstrip('/')}/"
-    # Dir: use path/* so contents are uploaded; file: use path as-is
-    path = Path(local_path)
-    source_pattern = str(local_path).rstrip("/") + "/*" if path.is_dir() else str(local_path)
+    path_str = str(local_path).rstrip("/")
+    # When cwd is set, local_path is relative to cwd - check is_dir under cwd
+    if cwd is not None:
+        is_dir = (Path(cwd) / path_str).is_dir()
+    else:
+        is_dir = Path(local_path).is_dir()
+    source_pattern = path_str + "/*" if is_dir else path_str
     cmd = [
         "jf", "rt", "u",
         source_pattern,
@@ -66,4 +75,11 @@ def jf_rt_ul(
     env = None
     if verbose:
         env = {**os.environ, "JFROG_CLI_LOG_LEVEL": "DEBUG"}
-    return run(cmd, capture_output=True, text=True, timeout=3600, env=env)
+    return run(
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=3600,
+        env=env,
+        cwd=str(cwd) if cwd is not None else None,
+    )
