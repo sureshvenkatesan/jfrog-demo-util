@@ -12,6 +12,7 @@ def run_sync(
     config_path: str | Path | None = None,
     *,
     verbose: bool = False,
+    insecure_tls: bool = False,
     _jf_available: object | None = None,
     _jf_rt_dl: object | None = None,
     _jf_rt_ul: object | None = None,
@@ -50,7 +51,7 @@ def run_sync(
         for sp in source_paths:
             if verbose:
                 print(f"\n--- jf rt dl '{sp}' '{download_dir}/' --server-id={source_server_id} --detailed-summary ---")
-            result = dl_fn(source_server_id, sp, download_dir, verbose=verbose)
+            result = dl_fn(source_server_id, sp, download_dir, verbose=verbose, insecure_tls=insecure_tls)
             if verbose:
                 if result.stdout:
                     print(result.stdout)
@@ -78,6 +79,7 @@ def run_sync(
                 target_repo,
                 repo_prefix,
                 verbose=verbose,
+                insecure_tls=insecure_tls,
                 cwd=download_dir,
             )
             if verbose:

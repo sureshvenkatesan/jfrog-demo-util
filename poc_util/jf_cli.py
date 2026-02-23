@@ -19,6 +19,7 @@ def jf_rt_dl(
     download_dir: str | Path,
     *,
     verbose: bool = False,
+    insecure_tls: bool = False,
     _run: object | None = None,
 ) -> subprocess.CompletedProcess:
     """Run: jf rt dl <source_path> <download_dir>/ --server-id=<id> (target is 2nd positional)."""
@@ -31,6 +32,8 @@ def jf_rt_dl(
     ]
     if verbose:
         cmd.append("--detailed-summary")
+    if insecure_tls:
+        cmd.append("--insecure-tls")
     run = _run or subprocess.run
     env = None
     if verbose:
@@ -45,6 +48,7 @@ def jf_rt_ul(
     target_path: str = "",
     *,
     verbose: bool = False,
+    insecure_tls: bool = False,
     cwd: str | Path | None = None,
     _run: object | None = None,
 ) -> subprocess.CompletedProcess:
@@ -71,6 +75,8 @@ def jf_rt_ul(
     ]
     if verbose:
         cmd.append("--detailed-summary")
+    if insecure_tls:
+        cmd.append("--insecure-tls")
     run = _run or subprocess.run
     env = None
     if verbose:

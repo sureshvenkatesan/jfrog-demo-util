@@ -88,10 +88,16 @@ def cleanup(ctx: click.Context, resources_dir: Path | None, dry_run: bool) -> No
     is_flag=True,
     help="Print jf CLI command lines and their stdout/stderr.",
 )
-def sync(ctx: click.Context, verbose: bool) -> None:
+@click.option(
+    "--insecure-tls",
+    "insecure_tls",
+    is_flag=True,
+    help="Pass --insecure-tls to jf CLI (skip TLS certificate verification).",
+)
+def sync(ctx: click.Context, verbose: bool, insecure_tls: bool) -> None:
     """Download from source Artifactory and upload to target (via jf CLI)."""
     config_path = ctx.obj["config_path"]
-    code = run_sync(config_path=config_path, verbose=verbose)
+    code = run_sync(config_path=config_path, verbose=verbose, insecure_tls=insecure_tls)
     raise SystemExit(code)
 
 

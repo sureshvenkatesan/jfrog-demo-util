@@ -81,3 +81,19 @@ def test_run_sync_fails_on_upload_error(config_file_with_sync):
          patch("poc_util.commands.sync_artifacts.jf_rt_ul", mock_ul):
         code = run_sync(config_path=config_file_with_sync)
     assert code == 1
+
+
+def test_run_sync_passes_insecure_tls_to_jf(config_file_with_sync):
+    """When insecure_tls=True, jf_rt_dl and jf_rt_ul are called with insecure_tls=True."""
+    (config_file_with_sync.parent / "sync_download" / "ch").mkdir(parents=True)
+    mock_dl = MagicMock(return_value=MagicMock(returncode=0, stdout="", stderr=""))
+    mock_ul = MagicMock(return_value=MagicMock(returncode=0, stdout="", stderr=""))
+    with patch("poc_util.commands.sync_artifacts.jf_available", return_value=True), \
+         patch("poc_util.commands.sync_artifacts.jf_rt_dl", mock_dl), \
+         patch("poc_util.commands.sync_artifacts.jf_rt_ul", mock_ul):
+        code = run_sync(config_path=config_file_with_sync, insecure_tls=True)
+    assert code == 0
+    mock_dl.assert_called()
+    mock_ul.assert_called()
+    assert mock_dl.call_args[1]["insecure_tls"] is True
+    assert mock_ul.call_args[1]["insecure_tls"] is True

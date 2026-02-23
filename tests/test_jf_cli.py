@@ -30,6 +30,14 @@ def test_jf_rt_dl_calls_subprocess_with_expected_args(tmp_path):
     assert args[3] == "repo/path/"
     assert args[4] == str(tmp_path).rstrip("/") + "/"  # target pattern (2nd positional)
     assert "--server-id=my-server" in args
+    assert "--insecure-tls" not in args
+
+
+def test_jf_rt_dl_passes_insecure_tls_when_requested(tmp_path):
+    mock_run = MagicMock(return_value=MagicMock(returncode=0, stdout="", stderr=""))
+    jf_rt_dl("my-server", "repo/path/", tmp_path, insecure_tls=True, _run=mock_run)
+    args = mock_run.call_args[0][0]
+    assert "--insecure-tls" in args
 
 
 def test_jf_rt_ul_calls_subprocess_with_expected_args(tmp_path):
@@ -42,3 +50,11 @@ def test_jf_rt_ul_calls_subprocess_with_expected_args(tmp_path):
     assert args[2] == "u"  # jf rt u (upload)
     assert "target-repo/subpath/" in args or "target-repo/" in args
     assert "--server-id=target-server" in args
+    assert "--insecure-tls" not in args
+
+
+def test_jf_rt_ul_passes_insecure_tls_when_requested(tmp_path):
+    mock_run = MagicMock(return_value=MagicMock(returncode=0, stdout="", stderr=""))
+    jf_rt_ul("target-server", tmp_path, "target-repo", _run=mock_run, insecure_tls=True)
+    args = mock_run.call_args[0][0]
+    assert "--insecure-tls" in args
