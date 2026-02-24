@@ -5,7 +5,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from poc_util.jf_cli import jf_available, jf_rt_dl, jf_rt_ul
+from poc_util.jf_cli import jf_available, jf_rt_delete, jf_rt_dl, jf_rt_ul
 
 
 def test_jf_available_true_when_on_path():
@@ -56,5 +56,27 @@ def test_jf_rt_ul_calls_subprocess_with_expected_args(tmp_path):
 def test_jf_rt_ul_passes_insecure_tls_when_requested(tmp_path):
     mock_run = MagicMock(return_value=MagicMock(returncode=0, stdout="", stderr=""))
     jf_rt_ul("target-server", tmp_path, "target-repo", _run=mock_run, insecure_tls=True)
+    args = mock_run.call_args[0][0]
+    assert "--insecure-tls" in args
+
+
+def test_jf_rt_delete_calls_subprocess_with_expected_args():
+    mock_run = MagicMock(return_value=MagicMock(returncode=0, stdout="", stderr=""))
+    result = jf_rt_delete("my-server", "my-repo/8d", _run=mock_run)
+    assert result.returncode == 0
+    args = mock_run.call_args[0][0]
+    assert args[0] == "jf"
+    assert args[1] == "rt"
+    assert args[2] == "delete"
+    assert args[3] == "my-repo/8d"
+    assert "--server-id=my-server" in args
+    assert "--quiet" in args
+    assert "--recursive" in args
+    assert "--insecure-tls" not in args
+
+
+def test_jf_rt_delete_passes_insecure_tls_when_requested():
+    mock_run = MagicMock(return_value=MagicMock(returncode=0, stdout="", stderr=""))
+    jf_rt_delete("my-server", "my-repo/path", insecure_tls=True, _run=mock_run)
     args = mock_run.call_args[0][0]
     assert "--insecure-tls" in args

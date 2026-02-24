@@ -89,3 +89,32 @@ def jf_rt_ul(
         env=env,
         cwd=str(cwd) if cwd is not None else None,
     )
+
+
+def jf_rt_delete(
+    server_id: str,
+    repo_path: str,
+    *,
+    verbose: bool = False,
+    insecure_tls: bool = False,
+    _run: object | None = None,
+) -> subprocess.CompletedProcess:
+    """Run: jf rt delete <repo_path> --server-id=<id> --quiet --recursive.
+
+    repo_path must be in the form <repository name>/<repository path>, e.g.
+    alexsh-generic-local/8d or alexsh-generic-local/path/to/folder.
+    """
+    cmd = [
+        "jf", "rt", "delete",
+        repo_path,
+        f"--server-id={server_id}",
+        "--quiet",
+        "--recursive",
+    ]
+    if insecure_tls:
+        cmd.append("--insecure-tls")
+    run = _run or subprocess.run
+    env = None
+    if verbose:
+        env = {**os.environ, "JFROG_CLI_LOG_LEVEL": "DEBUG"}
+    return run(cmd, capture_output=True, text=True, timeout=3600, env=env)

@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
+import sys
 from pathlib import Path
 
-from poc_util.config import load_config
+from poc_util.api.artifactory import delete_repository
+from poc_util.api.client import HttpClient
+from poc_util.config import get_jfrog_token, load_config
 from poc_util.jf_cli import jf_available, jf_rt_dl, jf_rt_ul
 
 
@@ -95,3 +99,109 @@ def run_sync(
     finally:
         # Optionally clean temp dir; leave in place per plan (user may inspect)
         pass
+
+
+def _sha256_prefixes_from_folder(folder: Path) -> list[str]:
+    """Collect unique first-2-chars of SHA-256 of every file under folder (recursive)."""
+    prefix_set: set[str] = set()
+    for path in folder.rglob("*"):
+        if not path.is_file():
+            continue
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                h.update(chunk)
+        prefix = h.hexdigest()[:2]
+        prefix_set.add(prefix)
+    return sorted(prefix_set)
+
+
+def run_sync_cleanup(
+    config_path: str | Path | None = None,
+    *,
+    verbose: bool = False,
+    insecure_tls: bool = False,
+    dry_run: bool = False,
+    yes: bool = False,
+    _client: HttpClient | None = None,
+    _delete_repo: object | None = None,
+    _sha256_prefixes_fn: object | None = None,
+) -> int:
+    """Delete Artifactory repositories named with the first 2 characters of the uploaded artifact SHA-256.
+
+    Repository names to delete are derived from the first two characters of the SHA-256 hash of
+    each file in the configurable sync download folder (sync.download_dir). Shows the list, asks
+    for confirmation (unless --yes or --dry-run), then deletes via Artifactory API.
+    """
+    config = load_config(config_path)
+    sync_cfg = config.get("sync")
+    if not sync_cfg:
+        print("No 'sync' section in config")
+        return 1
+
+    raw_download_dir = sync_cfg.get("download_dir") or "./sync_download"
+    download_dir = Path(raw_download_dir)
+    if not download_dir.is_absolute():
+        config_dir = Path(config_path or "config.yaml").resolve().parent
+        download_dir = (config_dir / raw_download_dir).resolve()
+    else:
+        download_dir = download_dir.resolve()
+
+    if not download_dir.exists():
+        print("No synced artifacts to clean: download_dir does not exist:", download_dir)
+        return 0
+
+    prefixes_fn = _sha256_prefixes_fn or _sha256_prefixes_from_folder
+    repo_keys = prefixes_fn(download_dir)
+    if not repo_keys:
+        print("No repositories to delete: no files in download_dir to compute SHA-256 prefixes from.")
+        return 0
+
+    print("Repositories to delete (named with first 2 characters of artifact SHA-256):")
+    for key in repo_keys:
+        print(f"  {key}")
+    print(f"Total: {len(repo_keys)} repository(ies)")
+
+    if dry_run:
+        print("Dry run: no deletions performed.")
+        return 0
+
+    if not yes:
+        try:
+            reply = input("Delete these repositories? [y/N] ").strip().lower()
+        except EOFError:
+            reply = "n"
+        if reply not in ("y", "yes"):
+            print("Aborted.")
+            return 0
+
+    base_url = config["jfrog"]["base_url"].rstrip("/")
+    token = get_jfrog_token(config)
+    verify = not insecure_tls
+    client = _client or HttpClient(base_url, token, verify=verify)
+    delete_fn = _delete_repo or delete_repository
+
+    failed = []
+    for repo_key in repo_keys:
+        if verbose:
+            print(f"Deleting repository '{repo_key}' ...")
+        try:
+            resp = delete_fn(client, repo_key)
+            if resp.status_code in (200, 204):
+                if verbose:
+                    print(f"  Deleted {repo_key}")
+            elif resp.status_code == 404:
+                if verbose:
+                    print(f"  {repo_key} not found (already deleted or missing)")
+            else:
+                print(f"Failed to delete repository '{repo_key}': HTTP {resp.status_code}", file=sys.stderr)
+                failed.append(repo_key)
+        except Exception as e:
+            print(f"Failed to delete repository '{repo_key}': {e}", file=sys.stderr)
+            failed.append(repo_key)
+
+    if failed:
+        print(f"Sync cleanup completed with errors: {len(failed)} repository(ies) failed.", file=sys.stderr)
+        return 1
+    print("Sync cleanup completed.")
+    return 0

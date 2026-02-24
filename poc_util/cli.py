@@ -7,7 +7,7 @@ from pathlib import Path
 import click
 
 from poc_util.commands.init_poc import run_cleanup, run_init
-from poc_util.commands.sync_artifacts import run_sync
+from poc_util.commands.sync_artifacts import run_sync, run_sync_cleanup
 
 
 @click.group()
@@ -98,6 +98,46 @@ def sync(ctx: click.Context, verbose: bool, insecure_tls: bool) -> None:
     """Download from source Artifactory and upload to target (via jf CLI)."""
     config_path = ctx.obj["config_path"]
     code = run_sync(config_path=config_path, verbose=verbose, insecure_tls=insecure_tls)
+    raise SystemExit(code)
+
+
+@cli.command("sync-cleanup")
+@click.pass_context
+@click.option(
+    "--verbose",
+    "-v",
+    is_flag=True,
+    help="Print jf CLI command lines and their output.",
+)
+@click.option(
+    "--insecure-tls",
+    "insecure_tls",
+    is_flag=True,
+    help="Pass --insecure-tls to jf CLI (skip TLS certificate verification).",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Show paths that would be deleted without deleting or prompting.",
+)
+@click.option(
+    "--yes",
+    "-y",
+    is_flag=True,
+    help="Skip confirmation prompt and delete immediately.",
+)
+def sync_cleanup(
+    ctx: click.Context, verbose: bool, insecure_tls: bool, dry_run: bool, yes: bool
+) -> None:
+    """Delete Artifactory repositories named with the first 2 characters of the uploaded artifact SHA-256."""
+    config_path = ctx.obj["config_path"]
+    code = run_sync_cleanup(
+        config_path=config_path,
+        verbose=verbose,
+        insecure_tls=insecure_tls,
+        dry_run=dry_run,
+        yes=yes,
+    )
     raise SystemExit(code)
 
 

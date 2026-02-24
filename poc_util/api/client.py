@@ -8,12 +8,13 @@ import requests
 class HttpClient:
     """Thin wrapper: session with Bearer token, JSON POST."""
 
-    def __init__(self, base_url: str, token: str) -> None:
+    def __init__(self, base_url: str, token: str, *, verify: bool = True) -> None:
         self.base_url = base_url.rstrip("/")
         self.token = token
         self._session = requests.Session()
         self._session.headers["Authorization"] = f"Bearer {token}"
         self._session.headers["Content-Type"] = "application/json"
+        self._session.verify = verify
 
     def _url(self, path: str) -> str:
         """Full URL for path (relative to base_url). Path must start with /."""
