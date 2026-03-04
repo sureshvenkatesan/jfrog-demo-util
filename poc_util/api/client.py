@@ -18,7 +18,9 @@ class HttpClient:
 
     def _url(self, path: str) -> str:
         """Full URL for path (relative to base_url). Path must start with /."""
-        return self.base_url + path if path.startswith("/") else self.base_url + "/" + path
+        return (
+            self.base_url + path if path.startswith("/") else self.base_url + "/" + path
+        )
 
     def url_for(self, path: str) -> str:
         """Full URL for path (for dry-run display)."""

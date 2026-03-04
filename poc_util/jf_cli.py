@@ -6,6 +6,12 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
+from shlex import join as shlex_join
+
+
+def _print_cmd(cmd: list[str]) -> None:
+    """Print the command as it would be run (for --verbose)."""
+    print("$", shlex_join(cmd))
 
 
 def jf_available() -> bool:
@@ -18,18 +24,24 @@ def jf_rt_curl(
     path: str,
     *,
     method: str = "GET",
+    verbose: bool = False,
     insecure_tls: bool = False,
     _run: object | None = None,
 ) -> subprocess.CompletedProcess:
-    """Run: jf rt curl -X <method> <path> --server-id=<id>. Returns response body in stdout (e.g. JSON)."""
+    """Run: jf rt curl -X <method> <path> --server-id=<id>. Uses --insecure for curl (not --insecure-tls). Returns response body in stdout (e.g. JSON)."""
     cmd = [
-        "jf", "rt", "curl",
-        "-X", method.upper(),
+        "jf",
+        "rt",
+        "curl",
+        "-X",
+        method.upper(),
         path,
         f"--server-id={server_id}",
     ]
     if insecure_tls:
-        cmd.append("--insecure-tls")
+        cmd.append("--insecure")
+    if verbose:
+        _print_cmd(cmd)
     run = _run or subprocess.run
     return run(cmd, capture_output=True, text=True, timeout=60)
 
@@ -46,7 +58,9 @@ def jf_rt_dl(
     """Run: jf rt dl <source_path> <download_dir>/ --server-id=<id> (target is 2nd positional)."""
     target = str(download_dir).rstrip("/") + "/"
     cmd = [
-        "jf", "rt", "dl",
+        "jf",
+        "rt",
+        "dl",
         source_path,
         target,
         f"--server-id={server_id}",
@@ -55,6 +69,8 @@ def jf_rt_dl(
         cmd.append("--detailed-summary")
     if insecure_tls:
         cmd.append("--insecure-tls")
+    if verbose:
+        _print_cmd(cmd)
     run = _run or subprocess.run
     env = None
     if verbose:
@@ -89,7 +105,9 @@ def jf_rt_ul(
         is_dir = Path(local_path).is_dir()
     source_pattern = path_str + "/*" if is_dir else path_str
     cmd = [
-        "jf", "rt", "u",
+        "jf",
+        "rt",
+        "u",
         source_pattern,
         dest,
         f"--server-id={server_id}",
@@ -98,6 +116,8 @@ def jf_rt_ul(
         cmd.append("--detailed-summary")
     if insecure_tls:
         cmd.append("--insecure-tls")
+    if verbose:
+        _print_cmd(cmd)
     run = _run or subprocess.run
     env = None
     if verbose:
@@ -126,7 +146,9 @@ def jf_rt_delete(
     alexsh-generic-local/8d or alexsh-generic-local/path/to/folder.
     """
     cmd = [
-        "jf", "rt", "delete",
+        "jf",
+        "rt",
+        "delete",
         repo_path,
         f"--server-id={server_id}",
         "--quiet",

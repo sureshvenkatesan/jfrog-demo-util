@@ -14,10 +14,14 @@ from poc_util.config import get_jfrog_token, load_config
 from poc_util.jf_cli import jf_available, jf_rt_curl, jf_rt_dl, jf_rt_ul
 
 
-def _pattern_search_via_jf(server_id: str, pattern: str, insecure_tls: bool) -> dict:
+def _pattern_search_via_jf(
+    server_id: str, pattern: str, insecure_tls: bool, verbose: bool = False
+) -> dict:
     """Run pattern search via jf rt curl; return JSON with repoUri, sourcePattern, files."""
     path = "/api/search/pattern?" + urlencode({"pattern": pattern})
-    result = jf_rt_curl(server_id, path, insecure_tls=insecure_tls)
+    result = jf_rt_curl(
+        server_id, path, insecure_tls=insecure_tls, verbose=verbose
+    )
     if result.returncode != 0:
         raise RuntimeError(result.stderr or result.stdout or "jf rt curl failed")
     return json.loads(result.stdout)
@@ -27,11 +31,14 @@ def _resolve_patterns_to_paths(
     patterns: list[str],
     source_server_id: str,
     insecure_tls: bool,
+    verbose: bool = False,
 ) -> list[str]:
     """Resolve patterns via jf rt curl (Artifactory pattern search); return flat list of repo/path strings."""
     paths: list[str] = []
     for pattern in patterns:
-        data = _pattern_search_via_jf(source_server_id, pattern, insecure_tls)
+        data = _pattern_search_via_jf(
+            source_server_id, pattern, insecure_tls, verbose=verbose
+        )
         repo_uri = data.get("repoUri") or ""
         source_pattern = data.get("sourcePattern") or ""
         files = data.get("files") or []
@@ -69,7 +76,9 @@ def run_sync(
 
     source_server_id = sync_cfg["source_server_id"]
     source_patterns = sync_cfg["source_patterns"]
-    source_paths = _resolve_patterns_to_paths(source_patterns, source_server_id, insecure_tls)
+    source_paths = _resolve_patterns_to_paths(
+        source_patterns, source_server_id, insecure_tls, verbose=verbose
+    )
     if not source_paths:
         print("No artifacts matched any source pattern")
         return 0
@@ -78,7 +87,9 @@ def run_sync(
         print("Dry run: resolved patterns (files that would be downloaded):")
         for p in source_paths:
             print(f"  {p}")
-        print(f"Total: {len(source_paths)} file(s) from {len(source_patterns)} pattern(s)")
+        print(
+            f"Total: {len(source_paths)} file(s) from {len(source_patterns)} pattern(s)"
+        )
         return 0
 
     target_server_id = sync_cfg["target_server_id"]
@@ -95,20 +106,28 @@ def run_sync(
     download_dir.mkdir(parents=True, exist_ok=True)
     print(f"Using download_dir from config: {download_dir}")
     if verbose:
-        print(f"Resolved {len(source_paths)} artifact(s) from {len(source_patterns)} pattern(s)")
+        print(
+            f"Resolved {len(source_paths)} artifact(s) from {len(source_patterns)} pattern(s)"
+        )
     dl_fn = _jf_rt_dl or jf_rt_dl
     ul_fn = _jf_rt_ul or jf_rt_ul
 
     try:
         for sp in source_paths:
-            if verbose:
-                print(f"\n--- jf rt dl '{sp}' '{download_dir}/' --server-id={source_server_id} --detailed-summary ---")
-            result = dl_fn(source_server_id, sp, download_dir, verbose=verbose, insecure_tls=insecure_tls)
+            result = dl_fn(
+                source_server_id,
+                sp,
+                download_dir,
+                verbose=verbose,
+                insecure_tls=insecure_tls,
+            )
             if verbose:
                 if result.stdout:
                     print(result.stdout)
                 if result.stderr:
-                    print(result.stderr, end="" if result.stderr.endswith("\n") else "\n")
+                    print(
+                        result.stderr, end="" if result.stderr.endswith("\n") else "\n"
+                    )
             if result.returncode != 0:
                 print(f"Download failed for {sp}: {result.stderr or result.stdout}")
                 return 1
@@ -121,10 +140,6 @@ def run_sync(
             # Dest is repo (and optional target_path) only - jf appends source-relative path,
             # so "8d/*" -> repo/8d/c9/... not repo/8d/8d/c9/...
             repo_prefix = target_path.rstrip("/") if target_path else ""
-            if verbose:
-                dest = f"{target_repo}/{repo_prefix}/" if repo_prefix else f"{target_repo}/"
-                src = f"{entry.name}/*" if entry.is_dir() else entry.name
-                print(f"\n--- jf rt u '{src}' '{dest}' --server-id={target_server_id} (cwd={download_dir}) --detailed-summary ---")
             result = ul_fn(
                 target_server_id,
                 entry.name,
@@ -138,9 +153,13 @@ def run_sync(
                 if result.stdout:
                     print(result.stdout)
                 if result.stderr:
-                    print(result.stderr, end="" if result.stderr.endswith("\n") else "\n")
+                    print(
+                        result.stderr, end="" if result.stderr.endswith("\n") else "\n"
+                    )
             if result.returncode != 0:
-                print(f"Upload failed for {entry.name}: {result.stderr or result.stdout}")
+                print(
+                    f"Upload failed for {entry.name}: {result.stderr or result.stdout}"
+                )
                 return 1
         print("Sync completed")
         return 0
@@ -196,13 +215,17 @@ def run_sync_cleanup(
         download_dir = download_dir.resolve()
 
     if not download_dir.exists():
-        print("No synced artifacts to clean: download_dir does not exist:", download_dir)
+        print(
+            "No synced artifacts to clean: download_dir does not exist:", download_dir
+        )
         return 0
 
     prefixes_fn = _sha256_prefixes_fn or _sha256_prefixes_from_folder
     repo_keys = prefixes_fn(download_dir)
     if not repo_keys:
-        print("No repositories to delete: no files in download_dir to compute SHA-256 prefixes from.")
+        print(
+            "No repositories to delete: no files in download_dir to compute SHA-256 prefixes from."
+        )
         return 0
 
     print("Repositories to delete (named with first 2 characters of artifact SHA-256):")
@@ -242,14 +265,20 @@ def run_sync_cleanup(
                 if verbose:
                     print(f"  {repo_key} not found (already deleted or missing)")
             else:
-                print(f"Failed to delete repository '{repo_key}': HTTP {resp.status_code}", file=sys.stderr)
+                print(
+                    f"Failed to delete repository '{repo_key}': HTTP {resp.status_code}",
+                    file=sys.stderr,
+                )
                 failed.append(repo_key)
         except Exception as e:
             print(f"Failed to delete repository '{repo_key}': {e}", file=sys.stderr)
             failed.append(repo_key)
 
     if failed:
-        print(f"Sync cleanup completed with errors: {len(failed)} repository(ies) failed.", file=sys.stderr)
+        print(
+            f"Sync cleanup completed with errors: {len(failed)} repository(ies) failed.",
+            file=sys.stderr,
+        )
         return 1
     print("Sync cleanup completed.")
     return 0

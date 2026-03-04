@@ -1,8 +1,6 @@
 """Tests for template parsing (mocked file reads)."""
 
-import json
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -64,7 +62,9 @@ def test_load_and_parse_resource_missing_file(tmp_path):
 
 
 def test_load_and_parse_resource_injects_init_overrides(tmp_path):
-    (tmp_path / "webhook.txt").write_text("""curl --location 'https://x.com/xray/api/v1/webhooks' \\
+    (
+        tmp_path / "webhook.txt"
+    ).write_text("""curl --location 'https://x.com/xray/api/v1/webhooks' \\
 --header 'Content-Type: application/json' \\
 --data '{"name": "old", "url": "http://old"}'""")
     config = {
@@ -90,7 +90,9 @@ def test_worker_resource_parses_and_is_properly_formatted(sample_config):
       so the API's TypeScript compiler does not see 'Invalid character' at regex lines.
     """
     if not (_RESOURCES_DIR / "worker.txt").is_file():
-        pytest.skip("resources/worker.txt not found (e.g. running from installed package only)")
+        pytest.skip(
+            "resources/worker.txt not found (e.g. running from installed package only)"
+        )
 
     url, body = load_and_parse_resource(_RESOURCES_DIR, "worker", sample_config)
 
@@ -110,9 +112,9 @@ def test_worker_resource_parses_and_is_properly_formatted(sample_config):
 
     # Regex literals must keep escaped slashes so /pattern/ is valid (e.g. /(...)\/CVSS:2\.0\/(.+)/)
     # If \/ were decoded to /, we'd get /(...)/CVSS which closes the regex and causes "Invalid character"
-    assert "\\/CVSS" in source_code or "\\/.0" in source_code or "\\/(.+)" in source_code, (
-        "sourceCode should preserve \\/ in regex literals for the TypeScript compiler"
-    )
+    assert (
+        "\\/CVSS" in source_code or "\\/.0" in source_code or "\\/(.+)" in source_code
+    ), "sourceCode should preserve \\/ in regex literals for the TypeScript compiler"
     # Escaped dot in regex (e.g. \\.0)
     assert "\\.0" in source_code, (
         "sourceCode should preserve \\. in regex for CVSS pattern"

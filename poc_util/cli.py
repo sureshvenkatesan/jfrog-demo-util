@@ -44,7 +44,12 @@ def cli(ctx: click.Context, config_path: Path) -> None:
     is_flag=True,
     help="Show HTTP method and URL for each request without sending.",
 )
-def init(ctx: click.Context, resources_dir: Path | None, webhook_delay_seconds: float, dry_run: bool) -> None:
+def init(
+    ctx: click.Context,
+    resources_dir: Path | None,
+    webhook_delay_seconds: float,
+    dry_run: bool,
+) -> None:
     """Create Worker, Webhook, Policy, and Watch from config and resource templates."""
     config_path = ctx.obj["config_path"]
     code = run_init(
@@ -102,7 +107,12 @@ def cleanup(ctx: click.Context, resources_dir: Path | None, dry_run: bool) -> No
 def sync(ctx: click.Context, verbose: bool, insecure_tls: bool, dry_run: bool) -> None:
     """Download from source Artifactory and upload to target (via jf CLI)."""
     config_path = ctx.obj["config_path"]
-    code = run_sync(config_path=config_path, verbose=verbose, insecure_tls=insecure_tls, dry_run=dry_run)
+    code = run_sync(
+        config_path=config_path,
+        verbose=verbose,
+        insecure_tls=insecure_tls,
+        dry_run=dry_run,
+    )
     raise SystemExit(code)
 
 

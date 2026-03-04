@@ -31,34 +31,40 @@ def test_validate_config_accepts_access_token():
 
 def test_validate_config_sync_requires_source_patterns():
     with pytest.raises(ValueError, match="source_patterns"):
-        validate_config({
-            "jfrog": {"base_url": "https://x.io", "token": "t"},
-            "sync": {
-                "source_server_id": "a",
-                "target_server_id": "b",
-                "target_repo": "r",
-            },
-        })
+        validate_config(
+            {
+                "jfrog": {"base_url": "https://x.io", "token": "t"},
+                "sync": {
+                    "source_server_id": "a",
+                    "target_server_id": "b",
+                    "target_repo": "r",
+                },
+            }
+        )
     with pytest.raises(ValueError, match="source_patterns must be an array"):
-        validate_config({
-            "jfrog": {"base_url": "https://x.io", "token": "t"},
-            "sync": {
-                "source_server_id": "a",
-                "source_patterns": "repo:*.whl",
-                "target_server_id": "b",
-                "target_repo": "r",
-            },
-        })
+        validate_config(
+            {
+                "jfrog": {"base_url": "https://x.io", "token": "t"},
+                "sync": {
+                    "source_server_id": "a",
+                    "source_patterns": "repo:*.whl",
+                    "target_server_id": "b",
+                    "target_repo": "r",
+                },
+            }
+        )
     with pytest.raises(ValueError, match="source_patterns must not be empty"):
-        validate_config({
-            "jfrog": {"base_url": "https://x.io", "token": "t"},
-            "sync": {
-                "source_server_id": "a",
-                "source_patterns": [],
-                "target_server_id": "b",
-                "target_repo": "r",
-            },
-        })
+        validate_config(
+            {
+                "jfrog": {"base_url": "https://x.io", "token": "t"},
+                "sync": {
+                    "source_server_id": "a",
+                    "source_patterns": [],
+                    "target_server_id": "b",
+                    "target_repo": "r",
+                },
+            }
+        )
 
 
 def test_get_jfrog_token_prefers_token():
@@ -84,6 +90,7 @@ def test_load_config_file_not_found(tmp_path):
 
 def test_load_config_success(tmp_path, sample_config):
     import yaml
+
     path = tmp_path / "config.yaml"
     path.write_text(yaml.dump(sample_config))
     loaded = load_config(path)

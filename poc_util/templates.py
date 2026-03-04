@@ -58,7 +58,13 @@ def _read_single_quoted(s: str, start: int) -> str:
     result = []
     while i < len(s):
         # Shell idiom '\'' (4 chars: quote backslash quote quote) = one literal quote
-        if i + 4 <= len(s) and s[i] == "'" and s[i + 1] == "\\" and s[i + 2] == "'" and s[i + 3] == "'":
+        if (
+            i + 4 <= len(s)
+            and s[i] == "'"
+            and s[i + 1] == "\\"
+            and s[i + 2] == "'"
+            and s[i + 3] == "'"
+        ):
             result.append("'")
             i += 4
             continue
@@ -75,9 +81,12 @@ def _read_single_quoted(s: str, start: int) -> str:
 
 def substitute_in_body(body: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     """Replace placeholders in body (and nested strings) with config values. Mutates body."""
-    token = config.get("jfrog", {}).get("token") or config.get("jfrog", {}).get("access_token") or ""
+    token = (
+        config.get("jfrog", {}).get("token")
+        or config.get("jfrog", {}).get("access_token")
+        or ""
+    )
     platform_token = config.get("jfrog", {}).get("platform_token") or token
-    base_url = (config.get("jfrog", {}) or {}).get("base_url", "").rstrip("/")
 
     def replace_in_value(obj: Any) -> Any:
         if isinstance(obj, str):

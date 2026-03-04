@@ -13,7 +13,10 @@ def sample_config():
         },
         "init": {
             "worker": {"key": "sbom-service"},
-            "webhook": {"name": "scanCompleted", "url": "http://worker/execute/sbom-service"},
+            "webhook": {
+                "name": "scanCompleted",
+                "url": "http://worker/execute/sbom-service",
+            },
             "policy": {"name": "sbom-policy", "type": "security"},
             "watch": {
                 "name": "poc-watch",

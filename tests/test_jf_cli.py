@@ -1,9 +1,6 @@
 """Tests for jf_cli module with mocked subprocess (no real jf execution)."""
 
-from pathlib import Path
-from unittest.mock import patch, MagicMock
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from poc_util.jf_cli import jf_available, jf_rt_curl, jf_rt_delete, jf_rt_dl, jf_rt_ul
 
@@ -31,11 +28,13 @@ def test_jf_rt_curl_calls_subprocess_with_expected_args():
     assert "--insecure-tls" not in args
 
 
-def test_jf_rt_curl_passes_insecure_tls_when_requested():
+def test_jf_rt_curl_passes_insecure_when_requested():
+    """jf rt curl uses --insecure (not --insecure-tls)."""
     mock_run = MagicMock(return_value=MagicMock(returncode=0, stdout="{}", stderr=""))
     jf_rt_curl("my-server", "/api/foo", insecure_tls=True, _run=mock_run)
     args = mock_run.call_args[0][0]
-    assert "--insecure-tls" in args
+    assert "--insecure" in args
+    assert "--insecure-tls" not in args
 
 
 def test_jf_rt_dl_calls_subprocess_with_expected_args(tmp_path):
@@ -62,7 +61,9 @@ def test_jf_rt_dl_passes_insecure_tls_when_requested(tmp_path):
 
 def test_jf_rt_ul_calls_subprocess_with_expected_args(tmp_path):
     mock_run = MagicMock(return_value=MagicMock(returncode=0, stdout="", stderr=""))
-    result = jf_rt_ul("target-server", tmp_path, "target-repo", "subpath", _run=mock_run)
+    result = jf_rt_ul(
+        "target-server", tmp_path, "target-repo", "subpath", _run=mock_run
+    )
     assert result.returncode == 0
     args = mock_run.call_args[0][0]
     assert "jf" in args

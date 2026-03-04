@@ -1,6 +1,5 @@
 """Tests for init command with mocked HTTP (no real Xray/Worker calls)."""
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -22,8 +21,9 @@ def mock_http_post():
 @pytest.fixture
 def config_file(tmp_path, sample_config):
     import yaml
+
     path = tmp_path / "config.yaml"
-    path.write_text(__import__("yaml").dump(sample_config))
+    path.write_text(yaml.dump(sample_config))
     return path
 
 

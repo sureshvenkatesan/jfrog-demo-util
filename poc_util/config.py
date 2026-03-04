@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any
 
@@ -43,7 +42,12 @@ def validate_config(data: dict[str, Any]) -> None:
         sync = data["sync"]
         if not isinstance(sync, dict):
             raise ValueError("sync must be an object")
-        for key in ("source_server_id", "source_patterns", "target_server_id", "target_repo"):
+        for key in (
+            "source_server_id",
+            "source_patterns",
+            "target_server_id",
+            "target_repo",
+        ):
             if key not in sync:
                 raise ValueError(f"sync.{key} is required")
         if not isinstance(sync.get("source_patterns"), list):

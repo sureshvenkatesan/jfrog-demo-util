@@ -66,13 +66,17 @@ def run_init(
                 r = post_watch(client, body)
             else:
                 continue
-            status = r.status_code if hasattr(r, "status_code") else getattr(r, "status", 0)
+            status = (
+                r.status_code if hasattr(r, "status_code") else getattr(r, "status", 0)
+            )
             if status >= 200 and status < 300:
                 print(f"Created {name}: {status}")
                 if name == "webhook" and webhook_delay_seconds > 0:
                     time.sleep(webhook_delay_seconds)
             else:
-                print(f"Failed {name}: {status} {getattr(r, 'text', getattr(r, 'content', ''))}")
+                print(
+                    f"Failed {name}: {status} {getattr(r, 'text', getattr(r, 'content', ''))}"
+                )
                 return 1
         except Exception as e:
             print(f"Error creating {name}: {e}")
@@ -140,11 +144,15 @@ def run_cleanup(
                 r = delete_watch(client, id_val)
             else:
                 continue
-            status = r.status_code if hasattr(r, "status_code") else getattr(r, "status", 0)
+            status = (
+                r.status_code if hasattr(r, "status_code") else getattr(r, "status", 0)
+            )
             if status >= 200 and status < 300:
                 print(f"Deleted {name} ({id_val}): {status}")
             else:
-                print(f"Failed {name} ({id_val}): {status} {getattr(r, 'text', getattr(r, 'content', ''))}")
+                print(
+                    f"Failed {name} ({id_val}): {status} {getattr(r, 'text', getattr(r, 'content', ''))}"
+                )
                 had_failure = True
         except Exception as e:
             print(f"Error deleting {name}: {e}")
