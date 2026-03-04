@@ -24,6 +24,10 @@ class HttpClient:
         """Full URL for path (for dry-run display)."""
         return self._url(path)
 
+    def get(self, path: str, params: dict | None = None) -> requests.Response:
+        """GET path (relative to base_url). Params are query string."""
+        return self._session.get(self._url(path), params=params or {}, timeout=60)
+
     def post(self, path: str, json_body: dict) -> requests.Response:
         """POST path (relative to base_url) with JSON body. Path must start with /."""
         return self._session.post(self._url(path), json=json_body, timeout=60)

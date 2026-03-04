@@ -1,4 +1,4 @@
-"""Artifactory REST API helpers."""
+"""Artifactory REST API helpers (sync uses jf rt curl for pattern search)."""
 
 from __future__ import annotations
 

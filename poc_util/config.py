@@ -43,11 +43,13 @@ def validate_config(data: dict[str, Any]) -> None:
         sync = data["sync"]
         if not isinstance(sync, dict):
             raise ValueError("sync must be an object")
-        for key in ("source_server_id", "source_path", "target_server_id", "target_repo"):
+        for key in ("source_server_id", "source_patterns", "target_server_id", "target_repo"):
             if key not in sync:
                 raise ValueError(f"sync.{key} is required")
-        if not isinstance(sync.get("source_path"), list):
-            raise ValueError("sync.source_path must be an array of repo/path strings")
+        if not isinstance(sync.get("source_patterns"), list):
+            raise ValueError("sync.source_patterns must be an array of pattern strings")
+        if not sync.get("source_patterns"):
+            raise ValueError("sync.source_patterns must not be empty")
 
 
 def get_jfrog_token(data: dict[str, Any]) -> str:

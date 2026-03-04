@@ -3,13 +3,46 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import sys
 from pathlib import Path
+from urllib.parse import urlencode
 
 from poc_util.api.artifactory import delete_repository
 from poc_util.api.client import HttpClient
 from poc_util.config import get_jfrog_token, load_config
-from poc_util.jf_cli import jf_available, jf_rt_dl, jf_rt_ul
+from poc_util.jf_cli import jf_available, jf_rt_curl, jf_rt_dl, jf_rt_ul
+
+
+def _pattern_search_via_jf(server_id: str, pattern: str, insecure_tls: bool) -> dict:
+    """Run pattern search via jf rt curl; return JSON with repoUri, sourcePattern, files."""
+    path = "/api/search/pattern?" + urlencode({"pattern": pattern})
+    result = jf_rt_curl(server_id, path, insecure_tls=insecure_tls)
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr or result.stdout or "jf rt curl failed")
+    return json.loads(result.stdout)
+
+
+def _resolve_patterns_to_paths(
+    patterns: list[str],
+    source_server_id: str,
+    insecure_tls: bool,
+) -> list[str]:
+    """Resolve patterns via jf rt curl (Artifactory pattern search); return flat list of repo/path strings."""
+    paths: list[str] = []
+    for pattern in patterns:
+        data = _pattern_search_via_jf(source_server_id, pattern, insecure_tls)
+        repo_uri = data.get("repoUri") or ""
+        source_pattern = data.get("sourcePattern") or ""
+        files = data.get("files") or []
+        # Repo key: from sourcePattern (part before ":") or from repoUri (last path segment)
+        if ":" in source_pattern:
+            repo = source_pattern.split(":", 1)[0]
+        else:
+            repo = repo_uri.rstrip("/").split("/")[-1] if repo_uri else ""
+        for f in files:
+            paths.append(f"{repo}/{f}")
+    return paths
 
 
 def run_sync(
@@ -17,11 +50,12 @@ def run_sync(
     *,
     verbose: bool = False,
     insecure_tls: bool = False,
+    dry_run: bool = False,
     _jf_available: object | None = None,
     _jf_rt_dl: object | None = None,
     _jf_rt_ul: object | None = None,
 ) -> int:
-    """Download from source_path(s) then upload to target. Returns 0 on success, 1 on failure."""
+    """Resolve source_patterns via jf rt curl (Artifactory pattern search), then download and upload to target. Returns 0 on success, 1 on failure."""
     config = load_config(config_path)
     sync_cfg = config.get("sync")
     if not sync_cfg:
@@ -34,7 +68,19 @@ def run_sync(
         return 1
 
     source_server_id = sync_cfg["source_server_id"]
-    source_paths = sync_cfg["source_path"]
+    source_patterns = sync_cfg["source_patterns"]
+    source_paths = _resolve_patterns_to_paths(source_patterns, source_server_id, insecure_tls)
+    if not source_paths:
+        print("No artifacts matched any source pattern")
+        return 0
+
+    if dry_run:
+        print("Dry run: resolved patterns (files that would be downloaded):")
+        for p in source_paths:
+            print(f"  {p}")
+        print(f"Total: {len(source_paths)} file(s) from {len(source_patterns)} pattern(s)")
+        return 0
+
     target_server_id = sync_cfg["target_server_id"]
     target_repo = sync_cfg["target_repo"]
     target_path = sync_cfg.get("target_path") or ""
@@ -48,6 +94,8 @@ def run_sync(
 
     download_dir.mkdir(parents=True, exist_ok=True)
     print(f"Using download_dir from config: {download_dir}")
+    if verbose:
+        print(f"Resolved {len(source_paths)} artifact(s) from {len(source_patterns)} pattern(s)")
     dl_fn = _jf_rt_dl or jf_rt_dl
     ul_fn = _jf_rt_ul or jf_rt_ul
 

@@ -1,11 +1,15 @@
 """Tests for sync command with mocked jf CLI (no real subprocess or Artifactory)."""
 
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from poc_util.commands.sync_artifacts import run_sync, run_sync_cleanup
+from poc_util.commands.sync_artifacts import _resolve_patterns_to_paths, run_sync, run_sync_cleanup
+
+# Patch target for pattern resolution so sync tests don't call real jf rt curl
+_RESOLVE_PATTERNS_PATCH = "poc_util.commands.sync_artifacts._resolve_patterns_to_paths"
 
 
 @pytest.fixture
@@ -17,11 +21,12 @@ def config_file_with_sync(tmp_path, sample_config):
 
 
 def test_run_sync_success(config_file_with_sync, sample_config):
-    """Sync runs without real jf; dl and ul are mocked. Upload iterates over download_dir entries."""
+    """Sync runs without real jf; pattern resolve and dl/ul are mocked. Upload iterates over download_dir entries."""
     (config_file_with_sync.parent / "sync_download" / "ch").mkdir(parents=True)
     mock_dl = MagicMock(return_value=MagicMock(returncode=0, stdout="", stderr=""))
     mock_ul = MagicMock(return_value=MagicMock(returncode=0, stdout="", stderr=""))
     with patch("poc_util.commands.sync_artifacts.jf_available", return_value=True), \
+         patch(_RESOLVE_PATTERNS_PATCH, return_value=["repo/path/"]), \
          patch("poc_util.commands.sync_artifacts.jf_rt_dl", mock_dl), \
          patch("poc_util.commands.sync_artifacts.jf_rt_ul", mock_ul):
         code = run_sync(config_path=config_file_with_sync)
@@ -48,6 +53,7 @@ def test_run_sync_uses_download_dir_from_config(tmp_path, sample_config):
     mock_dl = MagicMock(return_value=MagicMock(returncode=0, stdout="", stderr=""))
     mock_ul = MagicMock(return_value=MagicMock(returncode=0, stdout="", stderr=""))
     with patch("poc_util.commands.sync_artifacts.jf_available", return_value=True), \
+         patch(_RESOLVE_PATTERNS_PATCH, return_value=["repo/path/"]), \
          patch("poc_util.commands.sync_artifacts.jf_rt_dl", mock_dl), \
          patch("poc_util.commands.sync_artifacts.jf_rt_ul", mock_ul):
         code = run_sync(config_path=config_path)
@@ -58,6 +64,42 @@ def test_run_sync_uses_download_dir_from_config(tmp_path, sample_config):
     ul_call = mock_ul.call_args[0]
     assert ul_call[3] == ""
 
+def test_resolve_patterns_to_paths_parses_api_response():
+    """Pattern search API response (from jf rt curl) is parsed into repo/path strings."""
+    api_response = {
+        "repoUri": "https://psazuse.jfrog.io/artifactory/alexsh-pypi-local",
+        "sourcePattern": "alexsh-pypi-local:*PyYAML*.whl",
+        "files": [
+            "PyYAML-5.2-cp27-cp27m-win32.whl",
+            "PyYAML-5.2-cp35-cp35m-win32.whl",
+        ],
+    }
+    mock_curl = MagicMock(return_value=MagicMock(returncode=0, stdout=json.dumps(api_response), stderr=""))
+    with patch("poc_util.commands.sync_artifacts.jf_rt_curl", mock_curl):
+        paths = _resolve_patterns_to_paths(
+            ["alexsh-pypi-local:*PyYAML*.whl"],
+            "source-server",
+            False,
+        )
+    assert paths == [
+        "alexsh-pypi-local/PyYAML-5.2-cp27-cp27m-win32.whl",
+        "alexsh-pypi-local/PyYAML-5.2-cp35-cp35m-win32.whl",
+    ]
+
+
+def test_run_sync_dry_run_shows_resolved_paths(config_file_with_sync, capsys):
+    """With dry_run=True, sync resolves patterns, prints paths, and does not download or upload."""
+    resolved = ["repo/a.whl", "repo/b.whl"]
+    with patch("poc_util.commands.sync_artifacts.jf_available", return_value=True), \
+         patch(_RESOLVE_PATTERNS_PATCH, return_value=resolved):
+        code = run_sync(config_path=config_file_with_sync, dry_run=True)
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "Dry run" in out
+    assert "repo/a.whl" in out and "repo/b.whl" in out
+    assert "Total: 2 file(s)" in out
+
+
 def test_run_sync_fails_when_jf_not_available(config_file_with_sync):
     with patch("poc_util.commands.sync_artifacts.jf_available", return_value=False):
         code = run_sync(config_path=config_file_with_sync)
@@ -67,6 +109,7 @@ def test_run_sync_fails_when_jf_not_available(config_file_with_sync):
 def test_run_sync_fails_on_download_error(config_file_with_sync):
     mock_dl = MagicMock(return_value=MagicMock(returncode=1, stdout="", stderr="Download failed"))
     with patch("poc_util.commands.sync_artifacts.jf_available", return_value=True), \
+         patch(_RESOLVE_PATTERNS_PATCH, return_value=["repo/path/"]), \
          patch("poc_util.commands.sync_artifacts.jf_rt_dl", mock_dl), \
          patch("poc_util.commands.sync_artifacts.jf_rt_ul", MagicMock()):
         code = run_sync(config_path=config_file_with_sync)
@@ -77,6 +120,7 @@ def test_run_sync_fails_on_upload_error(config_file_with_sync):
     (config_file_with_sync.parent / "sync_download" / "ch").mkdir(parents=True)
     mock_ul = MagicMock(return_value=MagicMock(returncode=1, stdout="", stderr="Upload failed"))
     with patch("poc_util.commands.sync_artifacts.jf_available", return_value=True), \
+         patch(_RESOLVE_PATTERNS_PATCH, return_value=["repo/path/"]), \
          patch("poc_util.commands.sync_artifacts.jf_rt_dl", return_value=MagicMock(returncode=0)), \
          patch("poc_util.commands.sync_artifacts.jf_rt_ul", mock_ul):
         code = run_sync(config_path=config_file_with_sync)
@@ -89,6 +133,7 @@ def test_run_sync_passes_insecure_tls_to_jf(config_file_with_sync):
     mock_dl = MagicMock(return_value=MagicMock(returncode=0, stdout="", stderr=""))
     mock_ul = MagicMock(return_value=MagicMock(returncode=0, stdout="", stderr=""))
     with patch("poc_util.commands.sync_artifacts.jf_available", return_value=True), \
+         patch(_RESOLVE_PATTERNS_PATCH, return_value=["repo/path/"]), \
          patch("poc_util.commands.sync_artifacts.jf_rt_dl", mock_dl), \
          patch("poc_util.commands.sync_artifacts.jf_rt_ul", mock_ul):
         code = run_sync(config_path=config_file_with_sync, insecure_tls=True)

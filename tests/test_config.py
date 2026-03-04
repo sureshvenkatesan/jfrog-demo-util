@@ -29,8 +29,8 @@ def test_validate_config_accepts_access_token():
     validate_config({"jfrog": {"base_url": "https://x.io", "access_token": "t"}})
 
 
-def test_validate_config_sync_requires_source_path_array():
-    with pytest.raises(ValueError, match="source_path"):
+def test_validate_config_sync_requires_source_patterns():
+    with pytest.raises(ValueError, match="source_patterns"):
         validate_config({
             "jfrog": {"base_url": "https://x.io", "token": "t"},
             "sync": {
@@ -39,12 +39,22 @@ def test_validate_config_sync_requires_source_path_array():
                 "target_repo": "r",
             },
         })
-    with pytest.raises(ValueError, match="must be an array"):
+    with pytest.raises(ValueError, match="source_patterns must be an array"):
         validate_config({
             "jfrog": {"base_url": "https://x.io", "token": "t"},
             "sync": {
                 "source_server_id": "a",
-                "source_path": "repo/",
+                "source_patterns": "repo:*.whl",
+                "target_server_id": "b",
+                "target_repo": "r",
+            },
+        })
+    with pytest.raises(ValueError, match="source_patterns must not be empty"):
+        validate_config({
+            "jfrog": {"base_url": "https://x.io", "token": "t"},
+            "sync": {
+                "source_server_id": "a",
+                "source_patterns": [],
                 "target_server_id": "b",
                 "target_repo": "r",
             },
@@ -78,4 +88,4 @@ def test_load_config_success(tmp_path, sample_config):
     path.write_text(yaml.dump(sample_config))
     loaded = load_config(path)
     assert loaded["jfrog"]["base_url"] == "https://example.jfrog.io"
-    assert loaded["sync"]["source_path"] == ["repo/path/"]
+    assert loaded["sync"]["source_patterns"] == ["repo:path/*.whl"]

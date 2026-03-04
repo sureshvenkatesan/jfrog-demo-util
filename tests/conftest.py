@@ -22,7 +22,7 @@ def sample_config():
         },
         "sync": {
             "source_server_id": "source",
-            "source_path": ["repo/path/"],
+            "source_patterns": ["repo:path/*.whl"],
             "target_server_id": "target",
             "target_repo": "target-repo",
             "target_path": "",

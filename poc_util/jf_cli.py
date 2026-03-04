@@ -1,4 +1,4 @@
-"""Run JFrog CLI (jf) subcommands for sync: rt dl, rt u."""
+"""Run JFrog CLI (jf) subcommands for sync: rt dl, rt u, rt curl."""
 
 from __future__ import annotations
 
@@ -11,6 +11,27 @@ from pathlib import Path
 def jf_available() -> bool:
     """Return True if 'jf' is on PATH."""
     return shutil.which("jf") is not None
+
+
+def jf_rt_curl(
+    server_id: str,
+    path: str,
+    *,
+    method: str = "GET",
+    insecure_tls: bool = False,
+    _run: object | None = None,
+) -> subprocess.CompletedProcess:
+    """Run: jf rt curl -X <method> <path> --server-id=<id>. Returns response body in stdout (e.g. JSON)."""
+    cmd = [
+        "jf", "rt", "curl",
+        "-X", method.upper(),
+        path,
+        f"--server-id={server_id}",
+    ]
+    if insecure_tls:
+        cmd.append("--insecure-tls")
+    run = _run or subprocess.run
+    return run(cmd, capture_output=True, text=True, timeout=60)
 
 
 def jf_rt_dl(
