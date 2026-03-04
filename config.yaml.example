@@ -23,10 +23,10 @@ init:
         type: "security"
 
 sync:
-  source_server_id: "source-server"
-  source_path:
-    - "repo-name/path/"
-    - "other-repo/*.tgz"
+  source_server_id: "source-server"  # jf config; pattern search uses jf rt curl with this server
+  source_patterns:
+    - "repo-name:*pattern*.whl"
+    - "other-repo:path/*.tgz"
   target_server_id: "target-server"
   target_repo: "target-repo"
   target_path: ""  # optional
