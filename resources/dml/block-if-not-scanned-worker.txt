@@ -1,0 +1,23 @@
+curl --location 'http://localhost:8080//worker/api/v1/workers' \
+--header 'Content-Type: application/json' \
+--header 'Authorization: Bearer <jfrog token>' \
+--data '{
+    "key": "block-if-not-scanned2",
+    "application": "artifactory",
+    "description": "",
+    "enabled": true,
+    "sourceCode": "export default async (\n  context: PlatformContext,\n  data: BeforeDownloadRequestRequest\n): Promise<BeforeDownloadRequestResponse> => {\n  const artifactId = data.metadata.originalRepoPath?.id ?? data.metadata.originalRepoPath?.path ?? \"unknown\";\n  const repo = data.metadata.repoPath.key;\n  const path = data.metadata.originalRepoPath.path;\n\n  let status: ActionStatus = ActionStatus.UNSPECIFIED;\n  let message: string;\n\n  try {\n    console.log(data);\n    const res = await context.clients.platformHttp.get(\n      `/artifactory/api/storage/${repo}/${path}?properties`\n    );\n    console.log(res);\n    const properties = res?.data?.properties ?? {};\n    const propertiesStr = JSON.stringify(properties);\n\n    const isApproved = isApprovedFromResponse(res.data);\n    if (isApproved) {\n      status = ActionStatus.PROCEED;\n      message = `Artifact approved. Proceeding. [artifact: ${artifactId}] [properties: ${propertiesStr}]`;\n    } else {\n      status = ActionStatus.STOP;\n      message = `Artifact not approved or '\''approved'\'' property missing. [artifact: ${artifactId}] [properties: ${propertiesStr}]`;\n    }\n  } catch (error) {\n    status = ActionStatus.STOP;\n    message = `Request failed for artifact [${artifactId}]. ${error.message ?? String(error)}`;\n    console.error(\n      `Request failed with status code ${error.status ?? \"<none>\"} caused by: ${error.message}`\n    );\n  }\n\n  console.log(\">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\");\n  console.log(status);\n  console.log(message);\n  console.log(\">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\");\n  return {\n    status,\n    message,\n    modifiedRepoPath: data.metadata.repoPath,\n  };\n};\n\nfunction isApprovedFromResponse(\n  data: { properties?: { approved?: unknown } } | null | undefined\n): boolean {\n  const approved = data?.properties?.approved;\n  return Array.isArray(approved) && approved[0] === \"true\";\n}",
+    "action": "BEFORE_DOWNLOAD_REQUEST",
+    "filterCriteria": {
+        "artifactFilterCriteria": {
+            "includePatterns": [],
+            "excludePatterns": [],
+            "repoKeys": [
+                "alexsh-generic-local"
+            ],
+            "anyLocal": false,
+            "anyRemote": false,
+            "anyFederated": false
+        }
+    }
+}'

@@ -33,3 +33,5 @@ config.yaml
 !.env.example
 sync_download/
 poc_util/_vendor/
+
+.secrets
