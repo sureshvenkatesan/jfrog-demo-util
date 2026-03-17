@@ -8,6 +8,7 @@ import click
 
 from poc_util.commands.init_poc import run_cleanup, run_init
 from poc_util.commands.sync_artifacts import run_sync, run_sync_cleanup
+from poc_util.commands.sync_scan import run_sync_scan
 
 
 @click.group()
@@ -152,6 +153,50 @@ def sync_cleanup(
         insecure_tls=insecure_tls,
         dry_run=dry_run,
         yes=yes,
+    )
+    raise SystemExit(code)
+
+
+@cli.command("sync-scan")
+@click.pass_context
+@click.option(
+    "--server-id",
+    "server_id",
+    default=None,
+    help="Xray server ID (overrides sync-scan.server_id in config).",
+)
+@click.option(
+    "--verbose",
+    "-v",
+    is_flag=True,
+    help="Print jf xr curl command and response.",
+)
+@click.option(
+    "--insecure-tls",
+    "insecure_tls",
+    is_flag=True,
+    help="Pass --insecure-tls to jf xr curl.",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Print scan requests without sending.",
+)
+def sync_scan(
+    ctx: click.Context,
+    server_id: str | None,
+    verbose: bool,
+    insecure_tls: bool,
+    dry_run: bool,
+) -> None:
+    """Initiate Xray scan for components in sync-scan.components (api/v1/scanArtifact)."""
+    config_path = ctx.obj["config_path"]
+    code = run_sync_scan(
+        config_path=config_path,
+        server_id=server_id,
+        verbose=verbose,
+        insecure_tls=insecure_tls,
+        dry_run=dry_run,
     )
     raise SystemExit(code)
 

@@ -55,3 +55,33 @@ def test_cli_sync_cleanup_invokes_run_sync_cleanup(config_file):
     mock_cleanup.assert_called_once()
     call_kw = mock_cleanup.call_args[1]
     assert call_kw["yes"] is True
+
+
+def test_cli_sync_scan_invokes_run_sync_scan(config_file):
+    """Config in conftest may not have sync-scan; we only check that run_sync_scan is invoked."""
+    with patch("poc_util.cli.run_sync_scan", return_value=0) as mock_scan:
+        result = CliRunner().invoke(cli, ["--config", str(config_file), "sync-scan"])
+    assert result.exit_code == 0
+    mock_scan.assert_called_once()
+    call_kw = mock_scan.call_args[1]
+    assert call_kw["server_id"] is None
+    assert call_kw["verbose"] is False
+
+
+def test_cli_sync_scan_passes_server_id_and_verbose(config_file):
+    with patch("poc_util.cli.run_sync_scan", return_value=0) as mock_scan:
+        result = CliRunner().invoke(
+            cli,
+            [
+                "--config",
+                str(config_file),
+                "sync-scan",
+                "--server-id",
+                "my-xray",
+                "--verbose",
+            ],
+        )
+    assert result.exit_code == 0
+    call_kw = mock_scan.call_args[1]
+    assert call_kw["server_id"] == "my-xray"
+    assert call_kw["verbose"] is True

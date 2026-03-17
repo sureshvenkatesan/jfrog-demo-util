@@ -2,7 +2,14 @@
 
 from unittest.mock import MagicMock, patch
 
-from poc_util.jf_cli import jf_available, jf_rt_curl, jf_rt_delete, jf_rt_dl, jf_rt_ul
+from poc_util.jf_cli import (
+    jf_available,
+    jf_rt_curl,
+    jf_rt_delete,
+    jf_rt_dl,
+    jf_rt_ul,
+    jf_xr_curl,
+)
 
 
 def test_jf_available_true_when_on_path():
@@ -101,3 +108,39 @@ def test_jf_rt_delete_passes_insecure_tls_when_requested():
     jf_rt_delete("my-server", "my-repo/path", insecure_tls=True, _run=mock_run)
     args = mock_run.call_args[0][0]
     assert "--insecure-tls" in args
+
+
+def test_jf_xr_curl_calls_subprocess_with_expected_args():
+    mock_run = MagicMock(return_value=MagicMock(returncode=0, stdout="{}", stderr=""))
+    result = jf_xr_curl(
+        "xray-server",
+        "api/v1/scanArtifact",
+        body={"componentID": "npm://pkg:1.0"},
+        _run=mock_run,
+    )
+    assert result.returncode == 0
+    args = mock_run.call_args[0][0]
+    assert args[:3] == ["jf", "xr", "curl"]
+    assert "-X" in args and "POST" in args
+    assert "api/v1/scanArtifact" in args
+    assert "--server-id=xray-server" in args
+    assert "-H" in args and "Content-Type: application/json" in args
+    assert "--data" in args and '{"componentID": "npm://pkg:1.0"}' in args
+
+
+def test_jf_xr_curl_passes_insecure_tls_when_requested():
+    mock_run = MagicMock(return_value=MagicMock(returncode=0, stdout="{}", stderr=""))
+    jf_xr_curl("xray-server", "api/v1/foo", body={}, insecure_tls=True, _run=mock_run)
+    args = mock_run.call_args[0][0]
+    assert "--insecure-tls" in args
+
+
+def test_jf_xr_curl_verbose_prints_command_including_body():
+    """Verbose mode prints the full command including --data body so user sees what is posted."""
+    mock_run = MagicMock(return_value=MagicMock(returncode=0, stdout="", stderr=""))
+    with patch("poc_util.jf_cli._print_cmd") as mock_print:
+        jf_xr_curl("srv", "api/v1/scan", body={"x": 1}, verbose=True, _run=mock_run)
+    mock_print.assert_called_once()
+    cmd = mock_print.call_args[0][0]
+    assert "jf" in cmd and "xr" in cmd and "curl" in cmd
+    assert "--data" in cmd and '{"x": 1}' in cmd

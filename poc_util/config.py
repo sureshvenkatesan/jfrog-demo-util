@@ -55,6 +55,15 @@ def validate_config(data: dict[str, Any]) -> None:
         if not sync.get("source_patterns"):
             raise ValueError("sync.source_patterns must not be empty")
 
+    if "sync-scan" in data:
+        sc = data["sync-scan"]
+        if not isinstance(sc, dict):
+            raise ValueError("sync-scan must be an object")
+        if not isinstance(sc.get("components"), list) or not sc.get("components"):
+            raise ValueError(
+                "sync-scan.components must be a non-empty array of component ID strings"
+            )
+
 
 def get_jfrog_token(data: dict[str, Any]) -> str:
     """Return token for API calls (token or access_token)."""

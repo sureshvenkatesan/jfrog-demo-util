@@ -31,3 +31,9 @@ sync:
   target_repo: "target-repo"
   target_path: ""  # optional
   download_dir: "./sync_download"  # optional
+
+sync-scan:
+  server_id: "xray-server"  # jf config for Xray (override with --server-id)
+  components:
+    - "npm://lodash:4.17.21"
+    - "npm://express:4.18.2"

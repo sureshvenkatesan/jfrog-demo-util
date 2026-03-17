@@ -19,9 +19,7 @@ def _pattern_search_via_jf(
 ) -> dict:
     """Run pattern search via jf rt curl; return JSON with repoUri, sourcePattern, files."""
     path = "/api/search/pattern?" + urlencode({"pattern": pattern})
-    result = jf_rt_curl(
-        server_id, path, insecure_tls=insecure_tls, verbose=verbose
-    )
+    result = jf_rt_curl(server_id, path, insecure_tls=insecure_tls, verbose=verbose)
     if result.returncode != 0:
         raise RuntimeError(result.stderr or result.stdout or "jf rt curl failed")
     return json.loads(result.stdout)

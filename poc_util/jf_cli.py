@@ -1,7 +1,8 @@
-"""Run JFrog CLI (jf) subcommands for sync: rt dl, rt u, rt curl."""
+"""Run JFrog CLI (jf) subcommands for sync: rt dl, rt u, rt curl; xr curl for scan."""
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -44,6 +45,42 @@ def jf_rt_curl(
         _print_cmd(cmd)
     run = _run or subprocess.run
     return run(cmd, capture_output=True, text=True, timeout=60)
+
+
+def jf_xr_curl(
+    server_id: str,
+    path: str,
+    *,
+    method: str = "POST",
+    body: dict | None = None,
+    verbose: bool = False,
+    insecure_tls: bool = False,
+    _run: object | None = None,
+) -> subprocess.CompletedProcess:
+    """Run: jf xr curl -X <method> <path> --server-id=<id>. Sends JSON body with Content-Type and --data. Returns response in stdout."""
+    cmd = [
+        "jf",
+        "xr",
+        "curl",
+        "-X",
+        method.upper(),
+        path,
+        f"--server-id={server_id}",
+    ]
+    if body is not None:
+        cmd.extend(["-H", "Content-Type: application/json"])
+        cmd.extend(["--data", json.dumps(body)])
+    if insecure_tls:
+        cmd.append("--insecure-tls")
+    if verbose:
+        _print_cmd(cmd)
+    run = _run or subprocess.run
+    return run(
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
 
 
 def jf_rt_dl(
