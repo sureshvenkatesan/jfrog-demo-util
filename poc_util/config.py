@@ -59,10 +59,8 @@ def validate_config(data: dict[str, Any]) -> None:
         sc = data["sync-scan"]
         if not isinstance(sc, dict):
             raise ValueError("sync-scan must be an object")
-        if not isinstance(sc.get("components"), list) or not sc.get("components"):
-            raise ValueError(
-                "sync-scan.components must be a non-empty array of component ID strings"
-            )
+        if "server_id" not in sc:
+            raise ValueError("sync-scan.server_id is required")
 
 
 def get_jfrog_token(data: dict[str, Any]) -> str:

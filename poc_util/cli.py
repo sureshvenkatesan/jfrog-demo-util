@@ -189,7 +189,7 @@ def sync_scan(
     insecure_tls: bool,
     dry_run: bool,
 ) -> None:
-    """Initiate Xray scan for components in sync-scan.components (api/v1/scanArtifact)."""
+    """Trigger Xray index for repo_paths from sync result file (api/v2/index). Run sync first."""
     config_path = ctx.obj["config_path"]
     code = run_sync_scan(
         config_path=config_path,

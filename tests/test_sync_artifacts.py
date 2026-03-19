@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from poc_util.commands.sync_artifacts import (
+    SYNC_RESULT_FILENAME,
     _resolve_patterns_to_paths,
     run_sync,
     run_sync_cleanup,
@@ -49,6 +50,66 @@ def test_run_sync_success(config_file_with_sync, sample_config):
     assert (
         ul_call[3] == ""
     )  # repo prefix empty so path is repo/8d/c9/... not repo/ch/8d/...
+    # Sync writes sync_result.json with repo_paths (empty when only empty dir)
+    result_path = config_file_with_sync.parent / "sync_download" / SYNC_RESULT_FILENAME
+    assert result_path.exists()
+    data = json.loads(result_path.read_text())
+    assert "repo_paths" in data
+    assert data["repo_paths"] == []
+
+
+def test_run_sync_writes_sync_result_with_uploaded_paths(tmp_path, sample_config):
+    """Sync writes sync_result.json with every uploaded repo path (files and dir contents)."""
+    import yaml
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.dump(sample_config))
+    download_dir = tmp_path / "sync_download"
+    download_dir.mkdir()
+    (download_dir / "single.whl").write_bytes(b"x")
+    (download_dir / "nested").mkdir()
+    (download_dir / "nested" / "inner.tar").write_bytes(b"y")
+    mock_dl = MagicMock(return_value=MagicMock(returncode=0, stdout="", stderr=""))
+    mock_ul = MagicMock(return_value=MagicMock(returncode=0, stdout="", stderr=""))
+    with (
+        patch("poc_util.commands.sync_artifacts.jf_available", return_value=True),
+        patch(_RESOLVE_PATTERNS_PATCH, return_value=["repo/path/"]),
+        patch("poc_util.commands.sync_artifacts.jf_rt_dl", mock_dl),
+        patch("poc_util.commands.sync_artifacts.jf_rt_ul", mock_ul),
+    ):
+        code = run_sync(config_path=config_path)
+    assert code == 0
+    result_path = download_dir / SYNC_RESULT_FILENAME
+    assert result_path.exists()
+    data = json.loads(result_path.read_text())
+    assert set(data["repo_paths"]) == {
+        "target-repo/single.whl",
+        "target-repo/nested/inner.tar",
+    }
+
+
+def test_run_sync_excludes_sync_result_from_upload(tmp_path, sample_config):
+    """sync_result.json in download_dir is not uploaded (excluded from entries)."""
+    import yaml
+
+    config_path = tmp_path / "config.yaml"
+    sample_config["sync"]["download_dir"] = "./sync_download"
+    config_path.write_text(yaml.dump(sample_config))
+    download_dir = tmp_path / "sync_download"
+    download_dir.mkdir()
+    (download_dir / SYNC_RESULT_FILENAME).write_text('{"repo_paths": []}')
+    (download_dir / "artifact.whl").write_bytes(b"x")
+    mock_dl = MagicMock(return_value=MagicMock(returncode=0, stdout="", stderr=""))
+    mock_ul = MagicMock(return_value=MagicMock(returncode=0, stdout="", stderr=""))
+    with (
+        patch("poc_util.commands.sync_artifacts.jf_available", return_value=True),
+        patch(_RESOLVE_PATTERNS_PATCH, return_value=["repo/path/"]),
+        patch("poc_util.commands.sync_artifacts.jf_rt_dl", mock_dl),
+        patch("poc_util.commands.sync_artifacts.jf_rt_ul", mock_ul),
+    ):
+        run_sync(config_path=config_path)
+    assert mock_ul.call_count == 1
+    assert mock_ul.call_args[0][1] == "artifact.whl"
 
 
 def test_run_sync_uses_download_dir_from_config(tmp_path, sample_config):

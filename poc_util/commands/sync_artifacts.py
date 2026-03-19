@@ -13,6 +13,8 @@ from poc_util.api.client import HttpClient
 from poc_util.config import get_jfrog_token, load_config
 from poc_util.jf_cli import jf_available, jf_rt_curl, jf_rt_dl, jf_rt_ul
 
+SYNC_RESULT_FILENAME = "sync_result.json"
+
 
 def _pattern_search_via_jf(
     server_id: str, pattern: str, insecure_tls: bool, verbose: bool = False
@@ -48,6 +50,30 @@ def _resolve_patterns_to_paths(
         for f in files:
             paths.append(f"{repo}/{f}")
     return paths
+
+
+def _uploaded_repo_paths(
+    download_dir: Path,
+    entries: list[Path],
+    target_repo: str,
+    target_path: str,
+) -> list[str]:
+    """Build list of repo_path strings for every file that was (or will be) uploaded.
+
+    Each repo_path uses sync.target_repo as the repository (e.g. repo_key/path/to/file).
+    """
+    # prefix is sync.target_repo [+ optional target_path]
+    prefix = f"{target_repo}/{target_path.rstrip('/')}".rstrip("/") if target_path else target_repo
+    repo_paths: list[str] = []
+    for entry in entries:
+        if entry.is_file():
+            repo_paths.append(f"{prefix}/{entry.name}")
+        else:
+            for p in entry.rglob("*"):
+                if p.is_file():
+                    rel = p.relative_to(entry)
+                    repo_paths.append(f"{prefix}/{entry.name}/{rel.as_posix()}")
+    return repo_paths
 
 
 def run_sync(
@@ -129,8 +155,9 @@ def run_sync(
             if result.returncode != 0:
                 print(f"Download failed for {sp}: {result.stderr or result.stdout}")
                 return 1
-        # Upload each top-level entry under download_dir so repo paths are relative (e.g. ch/, jakarta/)
-        entries = sorted(download_dir.iterdir()) if download_dir.exists() else []
+        # Upload each top-level entry under download_dir (exclude sync result file)
+        all_entries = sorted(download_dir.iterdir()) if download_dir.exists() else []
+        entries = [e for e in all_entries if e.name != SYNC_RESULT_FILENAME]
         if not entries:
             print("No artifacts to upload (download_dir is empty)")
             return 0
@@ -159,6 +186,13 @@ def run_sync(
                     f"Upload failed for {entry.name}: {result.stderr or result.stdout}"
                 )
                 return 1
+        # repo_paths must use sync.target_repo as the repository for each path
+        repo_paths = _uploaded_repo_paths(
+            download_dir, entries, target_repo, target_path
+        )
+        result_path = download_dir / SYNC_RESULT_FILENAME
+        with open(result_path, "w", encoding="utf-8") as f:
+            json.dump({"repo_paths": repo_paths}, f, indent=2)
         print("Sync completed")
         return 0
     finally:

@@ -67,25 +67,14 @@ def test_validate_config_sync_requires_source_patterns():
         )
 
 
-def test_validate_config_sync_scan_requires_components():
-    """sync-scan.components must be a non-empty array when sync-scan is present."""
+def test_validate_config_sync_scan_requires_server_id():
+    """sync-scan.server_id is required when sync-scan is present. No components needed (file-driven)."""
     base = {"jfrog": {"base_url": "https://x.io", "token": "t"}}
     with pytest.raises(ValueError, match="sync-scan must be an object"):
         validate_config({**base, "sync-scan": "not-a-dict"})
-    with pytest.raises(ValueError, match="non-empty array"):
-        validate_config({**base, "sync-scan": {"server_id": "srv"}})
-    with pytest.raises(ValueError, match="non-empty array"):
-        validate_config({**base, "sync-scan": {"server_id": "srv", "components": []}})
-    with pytest.raises(ValueError, match="non-empty array"):
-        validate_config(
-            {**base, "sync-scan": {"server_id": "srv", "components": "npm://pkg:1"}}
-        )
-    validate_config(
-        {
-            **base,
-            "sync-scan": {"server_id": "srv", "components": ["npm://pkg:1.0"]},
-        }
-    )
+    with pytest.raises(ValueError, match="server_id"):
+        validate_config({**base, "sync-scan": {}})
+    validate_config({**base, "sync-scan": {"server_id": "srv"}})
 
 
 def test_get_jfrog_token_prefers_token():
