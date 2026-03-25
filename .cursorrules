@@ -1,8 +1,102 @@
-# POC Utility – Python rules
+# POC Utility – Terraform rules
 
-- Use Python 3.9+ style; prefer type hints for public functions and module boundaries.
-- Format with Black-style (4 spaces, double quotes); line length 100.
-- Prefer pathlib.Path over os.path for paths.
-- Tests: pytest in `tests/`; mock all external I/O (HTTP with responses or unittest.mock, subprocess, file reads for config/resources where appropriate).
+## Terraform Version and Providers
+
+- Require Terraform >= 1.6 (needed for native `terraform test`).
+- Pin the three official JFrog providers in `required_providers`: `jfrog/artifactory`, `jfrog/xray`, `jfrog/platform`.
+- Use pessimistic version constraints (`~>`) for providers to allow patch updates only.
+
+## Project Structure
+
+Standard file layout per directory/environment:
+
+```
+├── main.tf          # Resource definitions
+├── variables.tf     # Input variables (with descriptions + validation)
+├── outputs.tf       # Output values (with descriptions)
+├── providers.tf     # Provider config + required_providers + required_version
+├── locals.tf        # Local values / computed expressions
+├── data.tf          # Data sources
+├── terraform.tfvars # Variable values (git-ignored if sensitive)
+├── modules/         # Reusable child modules
+│   └── <name>/
+│       ├── main.tf
+│       ├── variables.tf
+│       ├── outputs.tf
+│       └── README.md
+└── tests/           # .tftest.hcl files
+```
+
+## Code Style
+
+- 2-space indentation (Terraform standard).
+- Run `terraform fmt` before every commit.
+- Run `terraform validate` before every commit.
+- Use TFLint for additional static analysis.
+- One blank line between top-level blocks.
+
+## Naming Conventions
+
+- `snake_case` for all Terraform identifiers (resources, variables, outputs, locals, modules).
+- Descriptive resource names; do not repeat the resource type in the name (e.g., `resource "xray_watch" "main"` not `"xray_watch_main"`).
+- Prefix environment-specific resources with the environment name via a variable, not hardcoded strings.
+
+## Resource Naming
+
+- Local repository keys **must** end in `-local`; remote repository keys **must** end in `-remote`.
+- All Xray security policy and watch names **must** include the `demo_name` variable as a prefix.
+- All Curation policy names **must** include the `demo_name` variable as a prefix.
+- Xray security policies and watches are created in **two sets**: `dry-run` (audit-only: notify deployer, generate violation) and `block` (enforcement: notify deployer + watch recipients, fail builds, block downloads).
+- Local repositories are created per environment (e.g., `dev`, `qa`, `prod`) using a cross-product of environments and repo definitions.
+
+## Typed Repositories
+
+- **All repositories (local, remote, virtual) must use package-type-specific Terraform resources**, not generic resources. The package type is determined by the `package_type` value in the tfvars configuration.
+  - Local: `artifactory_local_npm_repository`, `artifactory_local_pypi_repository`, `artifactory_local_docker_v2_repository`, etc.
+  - Remote: `artifactory_remote_npm_repository`, `artifactory_remote_pypi_repository`, `artifactory_remote_docker_repository`, etc.
+  - Virtual: `artifactory_virtual_npm_repository`, `artifactory_virtual_pypi_repository`, `artifactory_virtual_docker_repository`, etc.
+- **One virtual repository is created per package type** that has at least one local or remote repo of that type. Virtual repos aggregate only local + remote repos of their own type (e.g., the npm virtual includes npm locals + npm remotes).
+- Virtual repository keys follow the pattern `{demo_name}-{type}-virtual`.
+- Supported package types: `npm`, `pypi`, `maven`, `docker`, `go`, `nuget`, `generic`.
+- Note: Docker local repos use `artifactory_local_docker_v2_repository` (v2 suffix), while remote and virtual Docker repos do not.
+
+## Variables and Outputs
+
+- Every variable and output must have a `description`.
+- Use `type` constraints on all variables.
+- Add `validation` blocks where input has known constraints (e.g., URL format, non-empty strings).
+- Mark secrets with `sensitive = true`.
+- Provide sensible `default` values where appropriate; require explicit values for environment-specific settings.
+
+## Remote State
+
+- Terraform state is stored remotely in a JFrog Artifactory **Terraform Backend** repository (`demo-util-tfstate` by default; override via `TF_STATE_REPO` env var).
+- Both `base/` and `demo/` modules declare `backend "http" {}`; all connection details are injected at runtime by `demo.sh` via `-backend-config` flags.
+- State names: `base` for the base module, `<demo-name>` for each demo.
+- The `bootstrap/` directory contains a one-time Terraform config that creates the backend repository. Run `./demo.sh bootstrap` before the first demo.
+- State locking is handled natively by Artifactory's Terraform Backend API (LOCK/UNLOCK endpoints).
+- Never commit `.tfstate` files; they should only exist in Artifactory (or locally under `bootstrap/` which is git-ignored).
+
+## Security
+
+- Never commit `.tfstate`, `.tfstate.backup`, or `*.tfvars` files containing secrets; enforce via `.gitignore`.
+- Never hardcode tokens or credentials; use environment variables (`JFROG_URL`, `JFROG_ACCESS_TOKEN`) or variable files.
 - No customer- or vendor-specific names in code, config examples, or resource templates.
-- Package layout: `poc_util` (CLI, config, api, commands, jf_cli, templates); entrypoint `poc-util` or `python -m poc_util`. Build and env: Hatch (hatch build, hatch run test).
+
+## Modules
+
+- Follow the standard module structure: `main.tf`, `variables.tf`, `outputs.tf`, `README.md`.
+- Each module should manage a single logical concern (e.g., xray-policy, xray-watch, worker).
+- Pin module source versions when referencing remote modules.
+
+## Testing
+
+- Use native Terraform tests (`.tftest.hcl` files in `tests/`) with `terraform test`.
+- Write plan-only tests for validation logic; use `command = plan` to avoid provisioning real resources.
+- For integration tests that provision real resources, use a dedicated test environment and clean up after.
+
+## JFrog-Specific Guidance
+
+- Use `jfrog/artifactory` for repository management, `jfrog/xray` for policies/watches/webhooks, and `jfrog/platform` for workers and platform-level settings.
+- Authenticate providers via environment variables, not inline tokens.
+- Reference the JFrog Xray provider docs and Artifactory provider docs on the Terraform Registry for resource schemas.

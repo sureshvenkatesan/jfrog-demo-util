@@ -1,0 +1,27 @@
+demo_name = "acme"
+
+environments = ["dev", "qa", "prod"]
+
+local_repos = {
+  "npm-local"  = "npm"
+  "pypi-local" = "pypi"
+}
+
+remote_repos = {
+  "npm-remote" = {
+    url          = "https://registry.npmjs.org"
+    package_type = "npm"
+  }
+  "pypi-remote" = {
+    url          = "https://files.pythonhosted.org"
+    package_type = "pypi"
+  }
+}
+
+enable_curation                 = true
+curation_malicious_condition_id = "1"
+curation_immature_condition_id  = "16"
+curation_cvss_condition_id      = "3"
+
+enable_dml_worker    = false
+dml_worker_repo_keys = []

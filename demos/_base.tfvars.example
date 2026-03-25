@@ -1,0 +1,6 @@
+jfrog_url          = "https://your-instance.jfrog.io"
+jfrog_access_token = "your-access-token"
+
+# Remote state is stored in Artifactory repo "demo-util-tfstate".
+# Override via TF_STATE_REPO env var if using a different repo name.
+# Run "./demo.sh bootstrap" once before the first demo to create the repo.

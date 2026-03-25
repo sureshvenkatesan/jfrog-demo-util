@@ -1,24 +1,25 @@
-# Hatch / build
-*.egg-info/
-*.egg
-.eggs/
-build/
-dist/
-.hatch/
+# Terraform state (remote state stored in Artifactory; local files are bootstrap only)
+*.tfstate
+*.tfstate.backup
+.terraform/
+.terraform.lock.hcl
+state/
+bootstrap/.terraform/
+bootstrap/terraform.tfstate*
 
-# Virtual env
-.venv/
-venv/
-env/
+# Variable files with secrets
+*.tfvars
+!*.tfvars.example
 
-# Python
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.coverage
-htmlcov/
-.mypy_cache/
-.ruff_cache/
+# Crash logs
+crash.log
+crash.*.log
+
+# Override files (local dev only)
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
 
 # IDE
 .idea/
@@ -26,12 +27,8 @@ htmlcov/
 *.swp
 *.swo
 
-# Project (secrets, generated)
-config.yaml
+# Secrets
 .env
 .env.*
 !.env.example
-sync_download/
-poc_util/_vendor/
-
 .secrets
