@@ -21,6 +21,7 @@ variables {
   curation_malicious_condition_id = "1"
   curation_immature_condition_id  = "16"
   curation_cvss_condition_id      = "3"
+  curation_decision_owner_group   = "TestWaiverGroup"
   enable_dml_worker               = false
   dml_worker_repo_keys            = []
 }

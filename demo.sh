@@ -228,10 +228,23 @@ generate_curation_override() {
   local demo_name
   demo_name=$(grep -E '^\s*demo_name\s*=' "${tfvars}" | head -1 | sed 's/.*= *"\([^"]*\)".*/\1/')
 
+  # Only include remote repos whose package_type is supported by JFrog Curation.
   local keys=()
   while IFS= read -r suffix; do
     [[ -n "${suffix}" ]] && keys+=("\"${demo_name}-${suffix}\"")
-  done < <(grep -oE '"[^"]*-remote" *=' "${tfvars}" | sed 's/ *=$//' | tr -d '"')
+  done < <(python3 -c "
+import re, sys
+with open(sys.argv[1]) as f:
+    content = f.read()
+supported = {'npm', 'pypi', 'maven', 'gradle', 'go', 'nuget'}
+for m in re.finditer(
+    r'\"([^\"]*-remote)\"\s*=\s*\{[^}]*package_type\s*=\s*\"(\w+)\"',
+    content, re.DOTALL,
+):
+    key, pkg = m.groups()
+    if pkg in supported:
+        print(key)
+" "${tfvars}")
 
   if [[ ${#keys[@]} -eq 0 ]]; then
     rm -f "${out}"

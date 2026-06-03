@@ -55,17 +55,18 @@ variable "local_repos" {
   validation {
     condition = alltrue([
       for k, v in var.local_repos :
-      contains(["npm", "pypi", "maven", "docker", "go", "nuget", "generic"], v)
+      contains(["npm", "pypi", "maven", "gradle", "ivy", "docker", "go", "nuget", "conan", "conda", "generic"], v)
     ])
-    error_message = "local_repos package type must be one of: npm, pypi, maven, docker, go, nuget, generic."
+    error_message = "local_repos package type must be one of: npm, pypi, maven, gradle, ivy, docker, go, nuget, conan, conda, generic."
   }
 }
 
 variable "remote_repos" {
-  description = "Map of remote repository suffix to config. Keys must end in '-remote'. package_type must be one of: npm, pypi, maven, docker, go, nuget, gems, gradle, generic."
+  description = "Map of remote repository suffix to config. Keys must end in '-remote'. package_type must be one of: npm, pypi, maven, docker, go, nuget, gems, gradle, generic. store_artifacts_locally only applies to generic repos (default true)."
   type = map(object({
-    url          = string
-    package_type = string
+    url                     = string
+    package_type            = string
+    store_artifacts_locally = optional(bool, true)
   }))
   default = {}
 
@@ -77,9 +78,9 @@ variable "remote_repos" {
   validation {
     condition = alltrue([
       for k, v in var.remote_repos :
-      contains(["npm", "pypi", "maven", "docker", "go", "nuget", "gems", "gradle", "generic"], v.package_type)
+      contains(["npm", "pypi", "maven", "ivy", "docker", "go", "nuget", "conan", "conda", "gems", "gradle", "generic"], v.package_type)
     ])
-    error_message = "package_type must be one of: npm, pypi, maven, docker, go, nuget, gems, gradle, generic."
+    error_message = "package_type must be one of: npm, pypi, maven, ivy, docker, go, nuget, conan, conda, gems, gradle, generic."
   }
 }
 
@@ -104,6 +105,12 @@ variable "curation_cvss_condition_id" {
   description = "Condition ID for the 'CVE with CVSS 9.0+' curation condition."
   type        = string
   default     = "3"
+}
+
+variable "curation_decision_owner_group" {
+  description = "Artifactory group name for curation waiver decision owners (used by immature and CVSS policies)."
+  type        = string
+  default     = "Chaitanya-CurationWaiver-Demo"
 }
 
 variable "enable_dml_worker" {
