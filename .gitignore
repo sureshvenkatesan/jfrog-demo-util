@@ -32,3 +32,6 @@ override.tf.json
 .env.*
 !.env.example
 .secrets
+
+#suggesitons and tests
+suggestions.txt

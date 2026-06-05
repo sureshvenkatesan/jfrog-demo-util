@@ -299,11 +299,39 @@ cmd_destroy() {
   init_demo "${name}"
   generate_curation_override "${name}"
 
-  echo "==> Destroying demo '${name}'..."
+  # JFrog auto-creates a <demo_name>-build-info repository when a project is
+  # provisioned. This repo is project-locked (cannot be detached or deleted
+  # independently), and the standard project DELETE API returns 400 "Project
+  # containing resources can't be removed" because of it. The only way to clean
+  # it up is to use DELETE /access/api/v1/projects/{key}?deleteRepos=true, which
+  # atomically removes the build-info repo and the project in one call.
+  # We do this before running terraform destroy so the project.demo resource
+  # deletion (which calls the standard DELETE without the flag) doesn't fail.
+  local demo_name
+  demo_name=$(grep -E '^\s*demo_name\s*=' "${DEMOS_DIR}/${name}.tfvars" | head -1 \
+    | sed 's/.*= *"\([^"]*\)".*/\1/')
+  local project_url="${JFROG_URL}/access/api/v1/projects/${demo_name}?deleteRepos=true"
+  echo "==> Pre-deleting JFrog project '${demo_name}' (removes auto-created build-info repo)..."
+  if curl -sf -X DELETE -H "Authorization: Bearer ${JFROG_TOKEN}" "${project_url}" \
+       2>/dev/null; then
+    echo "Project '${demo_name}' deleted via API."
+  else
+    echo "Project '${demo_name}' already gone or not found – continuing."
+  fi
+
+  echo "==> Destroying demo '${name}' Terraform resources..."
   terraform -chdir="${DEMO_DIR}" destroy \
     $(base_var_file_args) \
     -var-file="${DEMOS_DIR}/${name}.tfvars" \
     "${@:2}"
+
+  # Remove the entire remote state folder so this demo no longer appears in
+  # `list`. Deleting the folder (not just the .tfstate file) avoids the
+  # Artifactory empty-folder ghost that the storage listing still returns.
+  local state_folder="${JFROG_URL}/artifactory/${STATE_REPO}/${demo_name}/"
+  curl -sf -X DELETE -u "${TF_HTTP_USERNAME}:${JFROG_TOKEN}" "${state_folder}" 2>/dev/null \
+    && echo "Remote state for '${demo_name}' removed." \
+    || echo "Warning: could not remove remote state at ${state_folder}."
 
   echo "Demo '${name}' destroyed."
 }
@@ -344,14 +372,14 @@ cmd_output() {
 cmd_list_quiet() {
   parse_jfrog_creds
 
-  local api_url="${JFROG_URL}/api/storage/${STATE_REPO}/"
+  local api_url="${JFROG_URL}/artifactory/api/storage/${STATE_REPO}/"
   local response
-  response=$(curl -sf -u "_:${JFROG_TOKEN}" "${api_url}" 2>/dev/null) || return 0
+  response=$(curl -sf -u "${TF_HTTP_USERNAME}:${JFROG_TOKEN}" "${api_url}" 2>/dev/null) || return 0
 
-  echo "${response}" \
-    | grep -oE '"uri" *: *"/[^"]*"' \
-    | sed 's|.*"/\([^"]*\)"|\1|' \
-    | grep -v '^base$'
+  local uris
+  uris=$(echo "${response}" | grep -oE '"uri" *: *"/[^"]*"' || true)
+  [[ -z "${uris}" ]] && return 0
+  echo "${uris}" | sed 's|.*"/\([^"]*\)"|\1|' | grep -v '^base$' || true
 }
 
 cmd_list() {

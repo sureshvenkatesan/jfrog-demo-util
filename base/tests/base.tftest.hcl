@@ -1,3 +1,6 @@
+mock_provider "xray" {}
+mock_provider "platform" {}
+
 variables {
   jfrog_url              = "https://test-instance.jfrog.io"
   jfrog_access_token     = "test-token-value"
@@ -16,8 +19,8 @@ run "worker_has_correct_key" {
   }
 
   assert {
-    condition     = platform_workers_service.sbom[0].action == "GENERIC_EVENT"
-    error_message = "Worker action must be GENERIC_EVENT."
+    condition     = platform_workers_service.sbom[0].action == "AFTER_BUILD_INFO_SAVE"
+    error_message = "Worker action must be AFTER_BUILD_INFO_SAVE (default until jfrog/platform provider supports GENERIC_EVENT)."
   }
 
   assert {

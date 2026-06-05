@@ -1,3 +1,8 @@
+mock_provider "artifactory" {}
+mock_provider "xray" {}
+mock_provider "project" {}
+mock_provider "platform" {}
+
 variables {
   jfrog_url          = "https://test-instance.jfrog.io"
   jfrog_access_token = "test-token-value"

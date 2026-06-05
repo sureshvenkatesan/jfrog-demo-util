@@ -66,6 +66,10 @@ locals {
     { for k, v in artifactory_remote_ivy_repository.demo : k => v.key },
   )
 
+  # Effective group name for curation waiver decision owners.
+  # Falls back to "<demo_name>-curation-waiver" when the variable is left empty.
+  curation_group_name = coalesce(var.curation_decision_owner_group, "${var.demo_name}-curation-waiver")
+
   # Collect all virtual repo keys (only for types that have at least one repo)
   all_virtual_repo_keys = {
     for type, repos in {
@@ -555,7 +559,7 @@ resource "xray_watch" "dry_run" {
 
 resource "xray_watch" "block" {
   name        = "${var.demo_name}-block-watch"
-  active      = false
+  active      = true
   project_key = project.demo.key
 
   watch_resource {
@@ -601,6 +605,18 @@ resource "xray_curation_policy" "malicious" {
   ]
 }
 
+# ---------------------------------------------------------------------------
+# Curation waiver group
+# ---------------------------------------------------------------------------
+
+resource "platform_group" "curation_waiver" {
+  count = var.enable_curation ? 1 : 0
+
+  name        = local.curation_group_name
+  description = "Decision owners for ${var.demo_name} curation waiver requests"
+  auto_join   = false
+}
+
 resource "xray_curation_policy" "immature" {
   count = var.enable_curation ? 1 : 0
 
@@ -609,9 +625,10 @@ resource "xray_curation_policy" "immature" {
   scope                 = "specific_repos"
   policy_action         = "block"
   waiver_request_config = "manual"
-  decision_owners       = [var.curation_decision_owner_group]
+  decision_owners       = [local.curation_group_name]
 
   depends_on = [
+    platform_group.curation_waiver,
     artifactory_remote_npm_repository.demo,
     artifactory_remote_pypi_repository.demo,
     artifactory_remote_maven_repository.demo,
@@ -633,9 +650,10 @@ resource "xray_curation_policy" "cvss" {
   scope                 = "specific_repos"
   policy_action         = "block"
   waiver_request_config = "manual"
-  decision_owners       = [var.curation_decision_owner_group]
+  decision_owners       = [local.curation_group_name]
 
   depends_on = [
+    platform_group.curation_waiver,
     artifactory_remote_npm_repository.demo,
     artifactory_remote_pypi_repository.demo,
     artifactory_remote_maven_repository.demo,

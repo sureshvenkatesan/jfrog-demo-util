@@ -108,9 +108,9 @@ variable "curation_cvss_condition_id" {
 }
 
 variable "curation_decision_owner_group" {
-  description = "Artifactory group name for curation waiver decision owners (used by immature and CVSS policies)."
+  description = "Artifactory group name for curation waiver decision owners (used by immature and CVSS policies). Leave empty to auto-generate '<demo_name>-curation-waiver'. The group is created by Terraform when enable_curation is true."
   type        = string
-  default     = "Chaitanya-CurationWaiver-Demo"
+  default     = ""
 }
 
 variable "enable_dml_worker" {

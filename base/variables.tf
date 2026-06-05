@@ -42,3 +42,18 @@ variable "webhook_url" {
   type        = string
   default     = ""
 }
+
+variable "worker_action" {
+  description = "Worker action (event) that triggers the SBOM worker. Defaults to AFTER_BUILD_INFO_SAVE (fires when Artifactory receives build info, aligning with Xray scan results). Change to GENERIC_EVENT once jfrog/platform provider adds support for HTTP-triggered workers."
+  type        = string
+  default     = "AFTER_BUILD_INFO_SAVE"
+
+  validation {
+    condition = contains([
+      "BEFORE_DOWNLOAD", "AFTER_DOWNLOAD", "BEFORE_UPLOAD", "AFTER_CREATE",
+      "AFTER_BUILD_INFO_SAVE", "AFTER_MOVE", "BEFORE_PROPERTY_CREATE",
+      "BEFORE_PROPERTY_DELETE", "AFTER_PROPERTY_CREATE", "AFTER_PROPERTY_DELETE",
+    ], var.worker_action)
+    error_message = "worker_action must be one of the actions supported by the jfrog/platform provider."
+  }
+}

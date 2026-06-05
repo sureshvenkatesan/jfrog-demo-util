@@ -5,7 +5,17 @@ resource "platform_workers_service" "sbom" {
   enabled     = true
   description = "SBOM service worker: generates CycloneDX SBOMs from Xray webhook payloads."
   source_code = file("${path.module}/workers/sbom-service.ts")
-  action      = "GENERIC_EVENT"
+  # GENERIC_EVENT (HTTP-triggered) is the ideal action for Xray-webhook-driven
+  # SBOM generation, but jfrog/platform provider <=2.2.x does not yet support it.
+  # Use var.worker_action (default: AFTER_BUILD_INFO_SAVE) and update once
+  # the provider adds GENERIC_EVENT to its schema validation.
+  action = var.worker_action
+
+  filter_criteria = {
+    artifact_filter_criteria = {
+      repo_keys = []
+    }
+  }
 }
 
 resource "xray_webhook" "scan_completed" {

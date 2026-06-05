@@ -11,10 +11,11 @@ and block), and three Curation policies.
 poc-util/
 ├── bootstrap/         # One-time setup: creates the remote state backend repo
 ├── base/              # Optional: SBOM worker + Xray webhook (disabled by default)
+│   └── tests/         # Terraform plan-only tests for the base module
 ├── demo/              # Per-demo: project, repos, policies, watches, curation
+│   └── tests/         # Terraform plan-only tests for the demo module
 ├── demos/             # Shared credentials + per-demo .tfvars files
-├── demo.sh            # Lifecycle script
-└── tests/             # Terraform test files
+└── demo.sh            # Lifecycle script
 ```
 
 The `demo/` module is the primary entrypoint. The `base/` module is optional and only
@@ -27,7 +28,7 @@ at rest, and team-wide access.
 
 ## Prerequisites
 
-- [Terraform](https://developer.hashicorp.com/terraform/install) >= 1.6
+- [Terraform](https://developer.hashicorp.com/terraform/install) >= 1.7
 - A JFrog Platform instance with Enterprise X or Enterprise+ license
 - A JFrog access token with admin-level permissions
 - **Curation**: Remote repositories must be connected to the Curation service before
@@ -113,16 +114,17 @@ Each demo creates the following resources, all scoped to a JFrog Project:
 | Resource | Terraform Type | Description |
 |----------|---------------|-------------|
 | JFrog Project | `project` | Isolated project for the demo |
-| Local repositories | `artifactory_local_generic_repository` | One per environment (dev/qa/prod), keys end in `-local`, `xray_index = true` |
-| Remote repositories | `artifactory_remote_generic_repository` | Keys end in `-remote`, with `curated = true` for Curation |
-| Virtual repository | `artifactory_virtual_generic_repository` | Aggregates all local and remote repos |
-| Dry-run security policy | `xray_security_policy` | Two rules: malicious packages + CVE High (audit only) |
-| Block security policy | `xray_security_policy` | Two rules: malicious packages + CVE High (blocks downloads, builds) |
-| Dry-run watch | `xray_watch` | Monitors all project repos with dry-run policy |
-| Block watch | `xray_watch` | Monitors all project repos with block policy |
+| Curation waiver group | `platform_group` | Decision-owners group for curation waiver requests; auto-named `{demo_name}-curation-waiver` |
+| Local repositories | `artifactory_local_<type>_repository` | One per environment × package type (keys: `{demo_name}-{env}-{suffix}`), `xray_index = true` |
+| Remote repositories | `artifactory_remote_<type>_repository` | Keys end in `-remote`; `curated = true` when curation is enabled |
+| Virtual repositories | `artifactory_virtual_<type>_repository` | One per package type, aggregates matching local + remote repos |
+| Dry-run security policy | `xray_security_policy` | Two rules: malicious packages + CVE High (audit only, notify deployer) |
+| Block security policy | `xray_security_policy` | Two rules: malicious packages + CVE High (blocks downloads and builds) |
+| Dry-run watch | `xray_watch` | Monitors all project repos with the dry-run policy |
+| Block watch | `xray_watch` | Monitors all project repos with the block policy |
 | Malicious curation policy | `xray_curation_policy` | Blocks malicious packages on remote repos |
-| Immature curation policy | `xray_curation_policy` | Blocks immature packages (strict) on remote repos |
-| CVSS 9.0+ curation policy | `xray_curation_policy` | Blocks packages with CVSS score 9.0+ on remote repos |
+| Immature curation policy | `xray_curation_policy` | Blocks immature packages (strict) on remote repos; waiver group as decision owner |
+| CVSS 9.0+ curation policy | `xray_curation_policy` | Blocks packages with CVSS score 9.0+ on remote repos; waiver group as decision owner |
 | DML Worker (optional) | `platform_workers_service` | Block-if-not-scanned worker |
 
 ## Variables
@@ -146,6 +148,7 @@ Each demo creates the following resources, all scoped to a JFrog Project:
 | `curation_malicious_condition_id` | Condition ID for malicious package curation | *(required)* |
 | `curation_immature_condition_id` | Condition ID for immature package curation | `"16"` |
 | `curation_cvss_condition_id` | Condition ID for CVSS 9.0+ curation | `"3"` |
+| `curation_decision_owner_group` | Artifactory group for curation waiver approvals. Leave empty to auto-create `{demo_name}-curation-waiver` | `""` |
 | `enable_dml_worker` | Deploy block-if-not-scanned worker | `false` |
 | `dml_worker_repo_keys` | Repos the DML worker applies to | `[]` |
 
@@ -156,24 +159,27 @@ Each demo creates the following resources, all scoped to a JFrog Project:
 | `enable_worker_webhook` | Deploy SBOM worker and Xray webhook | `false` |
 | `worker_key` | Worker identifier | `"sbom-service"` |
 | `webhook_name` | Webhook name | `"scanCompleted"` |
+| `worker_action` | Worker action event type. Default is `AFTER_BUILD_INFO_SAVE`; change to `GENERIC_EVENT` once the `jfrog/platform` provider adds support | `"AFTER_BUILD_INFO_SAVE"` |
 
 ## Naming Conventions
 
 - Local repo keys: `{demo_name}-{env}-{suffix}` (e.g., `acme-dev-generic-local`)
 - Remote repo keys: `{demo_name}-{suffix}` (e.g., `acme-npm-remote`)
-- Virtual repo key: `{demo_name}-virtual`
+- Virtual repo keys: `{demo_name}-{type}-virtual` (e.g., `acme-npm-virtual`, `acme-pypi-virtual`)
 - Security policies: `{demo_name}-dry-run`, `{demo_name}-block`
 - Watches: `{demo_name}-dry-run-watch`, `{demo_name}-block-watch`
 - Curation policies: `{demo_name}-curation-malicious`, `{demo_name}-curation-immature`, `{demo_name}-curation-cvss-9`
 
 ## Testing
 
-Plan-only validation tests are in `tests/`. Run them against each module:
+Plan-only validation tests live inside each module's `tests/` subdirectory
+(`demo/tests/` and `base/tests/`). All providers are mocked so no real
+JFrog instance is required.
 
 ```bash
-# Demo module tests
-terraform -chdir=demo test -test-directory=../tests
+# Demo module tests (9 assertions)
+terraform -chdir=demo test
 
-# Base module tests (optional)
-terraform -chdir=base test -test-directory=../tests
+# Base module tests (2 assertions)
+terraform -chdir=base test
 ```
