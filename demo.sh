@@ -23,6 +23,16 @@ Commands:
   output  <demo-name>      Show Terraform outputs for a demo.
   list                     List active demos.
 
+Curation condition helpers:
+  list-curation-conditions               List all custom curation conditions on the platform.
+  list-catalog-labels [filter]           List custom catalog labels (optional substring filter, e.g. "acme").
+  create-curation-condition [name] [label]  Create a BannedLabels curation condition.
+                                            [name]   Condition name (default: demo-banned-label).
+                                            [label]  Catalog label to use (default: <name> minus -label suffix,
+                                                     e.g. "acme-banned-label" → "acme-banned").
+                                                     Label is created via Catalog GraphQL API if it doesn't exist.
+                                            Prints the condition ID to set in curation_banned_label_condition_id.
+
 Optional (worker + webhook):
   init-base                Apply shared base resources. Requires enable_worker_webhook = true in _base.tfvars.
   destroy-base             Destroy shared base resources.
@@ -108,6 +118,52 @@ ensure_demo_tfvars() {
   fi
 }
 
+# Read a single quoted string value from a tfvars file.
+# Usage: read_tfvar <key> <tfvars-file>
+read_tfvar() {
+  local key="$1" file="$2"
+  grep -E "^\s*${key}\s*=" "${file}" | head -1 \
+    | sed 's/.*= *"\([^"]*\)".*/\1/' || true
+}
+
+# ---------------------------------------------------------------------------
+# JFrog API helpers  (require parse_jfrog_creds to have been called)
+# ---------------------------------------------------------------------------
+
+# GET a JFrog API path; prints response body. Returns curl exit code.
+# Usage: jfrog_get <path>
+jfrog_get() {
+  curl -sf -H "Authorization: Bearer ${JFROG_TOKEN}" \
+    "${JFROG_URL}${1}" 2>/dev/null
+}
+
+# Call a JFrog API and return only the HTTP status code (body discarded).
+# Usage: jfrog_http_status <METHOD> <path> [extra-curl-args...]
+jfrog_http_status() {
+  local method="$1" path="$2"; shift 2
+  curl -s -o /dev/null -w "%{http_code}" \
+    -X "${method}" \
+    -H "Authorization: Bearer ${JFROG_TOKEN}" \
+    "${JFROG_URL}${path}" \
+    "$@" 2>/dev/null
+}
+
+# POST a GraphQL query to the JFrog Catalog custom GraphQL API.
+# Usage: jfrog_catalog_graphql <query-string>
+jfrog_catalog_graphql() {
+  local query="$1"
+  local payload=/tmp/catalog_gql_$$.json
+  printf '%s' "${query}" > "${payload}"
+  local resp
+  resp=$(curl -sf -X POST \
+    -H "Authorization: Bearer ${JFROG_TOKEN}" \
+    -H "Content-Type: application/json" \
+    --data-binary @"${payload}" \
+    "${JFROG_URL}/catalog/api/v1/custom/graphql" 2>/dev/null) || resp=""
+  rm -f "${payload}"
+  echo "${resp}"
+}
+
 # ---------------------------------------------------------------------------
 # Remote backend initialisation (Artifactory Terraform Backend repo)
 #
@@ -115,17 +171,18 @@ ensure_demo_tfvars() {
 #   https://<instance>/artifactory/api/terraform/state/<repo-key>/<state-name>
 # ---------------------------------------------------------------------------
 
-init_demo() {
-  local state_name="$1"
+# init_terraform <chdir-dir> <state-name>
+init_terraform() {
+  local chdir="$1" state_name="$2"
   local state_url="${JFROG_URL}/artifactory/${STATE_REPO}/${state_name}/terraform.tfstate"
   local init_log
   init_log=$(mktemp)
 
-  if ! terraform -chdir="${DEMO_DIR}" init -reconfigure \
+  if ! terraform -chdir="${chdir}" init -reconfigure \
     -backend-config="address=${state_url}" \
     -backend-config="update_method=PUT" \
     > "${init_log}" 2>&1; then
-    echo "Error: terraform init failed for demo '${state_name}':" >&2
+    echo "Error: terraform init failed for '${state_name}':" >&2
     cat "${init_log}" >&2
     rm -f "${init_log}"
     exit 1
@@ -133,22 +190,8 @@ init_demo() {
   rm -f "${init_log}"
 }
 
-init_base() {
-  local state_url="${JFROG_URL}/artifactory/${STATE_REPO}/base/terraform.tfstate"
-  local init_log
-  init_log=$(mktemp)
-
-  if ! terraform -chdir="${BASE_DIR}" init -reconfigure \
-    -backend-config="address=${state_url}" \
-    -backend-config="update_method=PUT" \
-    > "${init_log}" 2>&1; then
-    echo "Error: terraform init failed for base module:" >&2
-    cat "${init_log}" >&2
-    rm -f "${init_log}"
-    exit 1
-  fi
-  rm -f "${init_log}"
-}
+init_demo()  { init_terraform "${DEMO_DIR}"  "$1"; }
+init_base()  { init_terraform "${BASE_DIR}"  "base"; }
 
 # ---------------------------------------------------------------------------
 # Bootstrap (one-time) – create the Terraform Backend repository
@@ -226,17 +269,18 @@ generate_curation_override() {
   local out="${DEMO_DIR}/curation_override.tf.json"
 
   local demo_name
-  demo_name=$(grep -E '^\s*demo_name\s*=' "${tfvars}" | head -1 | sed 's/.*= *"\([^"]*\)".*/\1/')
+  demo_name=$(read_tfvar "demo_name" "${tfvars}")
 
-  # Only include remote repos whose package_type is supported by JFrog Curation.
-  local keys=()
+  # Collect all remote repo keys whose package_type is supported by JFrog Curation.
+  # These are the repos placed into DRYRUN (audit-only) policies.
+  local all_keys=()
   while IFS= read -r suffix; do
-    [[ -n "${suffix}" ]] && keys+=("\"${demo_name}-${suffix}\"")
+    [[ -n "${suffix}" ]] && all_keys+=("\"${demo_name}-${suffix}\"")
   done < <(python3 -c "
 import re, sys
 with open(sys.argv[1]) as f:
     content = f.read()
-supported = {'npm', 'pypi', 'maven', 'gradle', 'go', 'nuget'}
+supported = {'npm', 'pypi', 'maven', 'gradle', 'go', 'nuget', 'docker'}
 for m in re.finditer(
     r'\"([^\"]*-remote)\"\s*=\s*\{[^}]*package_type\s*=\s*\"(\w+)\"',
     content, re.DOTALL,
@@ -246,25 +290,142 @@ for m in re.finditer(
         print(key)
 " "${tfvars}")
 
-  if [[ ${#keys[@]} -eq 0 ]]; then
+  if [[ ${#all_keys[@]} -eq 0 ]]; then
     rm -f "${out}"
     return
   fi
 
-  local json_array
-  json_array=$(IFS=,; echo "${keys[*]}")
+  # Collect repos promoted to BLOCK enforcement (curation_block_repos variable).
+  # When the list is empty, BLOCK policies use scope="all" and need no repo_include.
+  local block_keys=()
+  while IFS= read -r key; do
+    [[ -n "${key}" ]] && block_keys+=("\"${key}\"")
+  done < <(python3 -c "
+import re, sys
+with open(sys.argv[1]) as f:
+    content = f.read()
+m = re.search(r'curation_block_repos\s*=\s*\[([^\]]*)\]', content, re.DOTALL)
+if m:
+    for item in re.findall(r'\"([^\"]+)\"', m.group(1)):
+        print(item)
+" "${tfvars}")
 
-  cat > "${out}" <<EOFJ
+  local dryrun_array
+  dryrun_array=$(IFS=,; echo "${all_keys[*]}")
+
+  # Build the override JSON. The xray provider's ValidateConfig requires
+  # repo_include to be a literal list at plan time (no variables/locals).
+  # DRYRUN: all curated remote repos (audit-only visibility).
+  # BLOCK:  only repos promoted via curation_block_repos; omitted when empty
+  #         so the resource falls back to scope="all" set in main.tf.
+  if [[ ${#block_keys[@]} -gt 0 ]]; then
+    local block_array
+    block_array=$(IFS=,; echo "${block_keys[*]}")
+    cat > "${out}" <<EOFJ
 {
   "resource": {
     "xray_curation_policy": {
-      "malicious": { "repo_include": [${json_array}] },
-      "immature":  { "repo_include": [${json_array}] },
-      "cvss":      { "repo_include": [${json_array}] }
+      "dryrun": { "repo_include": [${dryrun_array}] },
+      "block":  { "repo_include": [${block_array}] }
     }
   }
 }
 EOFJ
+  else
+    cat > "${out}" <<EOFJ
+{
+  "resource": {
+    "xray_curation_policy": {
+      "dryrun": { "repo_include": [${dryrun_array}] }
+    }
+  }
+}
+EOFJ
+  fi
+}
+
+# Shared setup for all demo lifecycle commands: init backend + generate override.
+setup_demo() {
+  local name="$1"
+  init_demo "${name}"
+  generate_curation_override "${name}"
+}
+
+# ---------------------------------------------------------------------------
+# Catalog label + curation condition helpers (shared)
+# ---------------------------------------------------------------------------
+
+# Ensure a catalog label exists, creating it via GraphQL if needed (idempotent).
+# Usage: ensure_catalog_label <label_name>
+ensure_catalog_label() {
+  local label_name="$1"
+  local resp
+  resp=$(jfrog_catalog_graphql \
+    "{\"query\":\"mutation { customCatalogLabel { createCustomCatalogLabel(label: { name: \\\"${label_name}\\\", description: \\\"Demo banned label for Curation policy demo\\\" }) { name } } }\"}")
+
+  local err
+  err=$(echo "${resp}" | python3 -c "
+import json, sys
+r = json.load(sys.stdin)
+errs = r.get('errors', [])
+msgs = [e.get('message','') for e in errs if 'already exist' not in e.get('message','')]
+print(msgs[0] if msgs else '')
+" 2>/dev/null || true)
+
+  if [[ -n "${err}" ]]; then
+    echo "  Warning: catalog label creation returned: ${err}" >&2
+  else
+    echo "  Catalog label '${label_name}' ready."
+  fi
+}
+
+# Find an existing curation condition by name whose label matches expected_label.
+# Prints the condition ID when both name and label match; empty otherwise.
+# Usage: find_curation_condition <condition_name> <expected_label>
+find_curation_condition() {
+  local condition_name="$1" expected_label="$2"
+  jfrog_get "/xray/api/v1/curation/conditions" \
+    | python3 -c "
+import json, sys
+condition_name, expected_label = sys.argv[1], sys.argv[2]
+r = json.load(sys.stdin)
+conditions = r.get('data', r) if isinstance(r, dict) else r
+for c in conditions:
+    if c.get('name') != condition_name:
+        continue
+    labels = []
+    for p in c.get('param_values', []):
+        v = p.get('value')
+        if isinstance(v, list):
+            labels.extend(v)
+    if expected_label in labels:
+        print(c.get('id', ''))
+    else:
+        print(f'LABEL_MISMATCH:{c.get(\"id\",\"\")}:{\"|\".join(labels)}', file=sys.stderr)
+    break
+" "${condition_name}" "${expected_label}" 2>/tmp/find_condition_$$.err || true
+  cat /tmp/find_condition_$$.err >&2 2>/dev/null || true
+  rm -f /tmp/find_condition_$$.err
+}
+
+# Create a BannedLabels curation condition; prints the assigned ID.
+# Usage: create_curation_condition <condition_name> <label_name>
+create_curation_condition() {
+  local condition_name="$1" label_name="$2"
+  local resp
+  resp=$(curl -sf -X POST \
+    -H "Authorization: Bearer ${JFROG_TOKEN}" \
+    -H "Content-Type: application/json" \
+    "${JFROG_URL}/xray/api/v1/curation/conditions" \
+    -d "{\"name\":\"${condition_name}\",\"risk_type\":\"security\",\"condition_template_id\":\"BannedLabels\",\"param_values\":[{\"param_id\":\"list_of_labels\",\"value\":[\"${label_name}\"]}]}" \
+    2>/dev/null) || resp=""
+
+  echo "${resp}" | python3 -c "
+import json, sys
+r = json.load(sys.stdin)
+obj = r.get('data', r) if isinstance(r, dict) and 'data' in r else r
+print(obj.get('id', '') if isinstance(obj, dict) else '')
+" 2>/dev/null || true
 }
 
 # ---------------------------------------------------------------------------
@@ -276,14 +437,85 @@ cmd_create() {
   ensure_demo_tfvars "${name}"
   parse_jfrog_creds
 
+  local tfvars="${DEMOS_DIR}/${name}.tfvars"
+  local demo_name
+  demo_name=$(read_tfvar "demo_name" "${tfvars}")
+
+  # Auto-provision the CUR_BANNED_LABEL curation condition when the tfvars
+  # entry is absent or commented out. The condition is idempotent: reuses an
+  # existing one by name or creates it. The resolved ID is written back into
+  # the tfvars so all 14 curation policies are created.
+  local banned_id
+  banned_id=$(read_tfvar "curation_banned_label_condition_id" "${tfvars}")
+
+  if [[ -z "${banned_id}" ]]; then
+    local condition_name="${demo_name}-banned-label"
+    local banned_label="${demo_name}-banned"
+    echo "==> CUR_BANNED_LABEL not set – provisioning condition '${condition_name}'..."
+
+    ensure_catalog_label "${banned_label}"
+
+    # find_curation_condition only returns an ID when the condition exists AND
+    # uses the expected label. A name match with a wrong label emits a warning
+    # on stderr so the user knows a stale condition exists with a different label.
+    banned_id=$(find_curation_condition "${condition_name}" "${banned_label}" 2>/tmp/fc_warn_$$.txt)
+    local fc_warn
+    fc_warn=$(cat /tmp/fc_warn_$$.txt 2>/dev/null || true)
+    rm -f /tmp/fc_warn_$$.txt
+
+    if [[ "${fc_warn}" == LABEL_MISMATCH:* ]]; then
+      local old_id old_labels
+      old_id=$(echo "${fc_warn}" | cut -d: -f2)
+      old_labels=$(echo "${fc_warn}" | cut -d: -f3)
+      echo "  Warning: condition '${condition_name}' (ID ${old_id}) exists but uses label(s) '${old_labels}'" >&2
+      echo "           not '${banned_label}'. Delete it first to auto-create with the correct label." >&2
+      echo "           Reusing condition ID ${old_id} as-is." >&2
+      banned_id="${old_id}"
+    elif [[ -n "${banned_id}" ]]; then
+      echo "  Found existing condition '${condition_name}' with label '${banned_label}' — ID: ${banned_id}."
+    else
+      echo "  Creating BannedLabels condition '${condition_name}' (label: ${banned_label})..."
+      banned_id=$(create_curation_condition "${condition_name}" "${banned_label}")
+    fi
+
+    if [[ -n "${banned_id}" ]]; then
+      if grep -qE '^\s*#.*curation_banned_label_condition_id' "${tfvars}"; then
+        sed -i '' \
+          "s|^.*curation_banned_label_condition_id.*$|curation_banned_label_condition_id = \"${banned_id}\"|" \
+          "${tfvars}"
+      else
+        printf '\ncuration_banned_label_condition_id = "%s"\n' "${banned_id}" >> "${tfvars}"
+      fi
+      echo "  Wrote curation_banned_label_condition_id = \"${banned_id}\" to ${name}.tfvars."
+    else
+      echo "  Warning: could not resolve CUR_BANNED_LABEL condition – creating 12 policies instead of 14." >&2
+    fi
+  fi
+
   echo "==> Initializing demo module for '${name}'..."
-  init_demo "${name}"
-  generate_curation_override "${name}"
+  setup_demo "${name}"
+
+  # If the project already exists (orphaned from a previous destroy that couldn't
+  # delete it due to inherited roles), import it into Terraform state so apply
+  # can update it rather than fail with "already exists".
+  local proj_http
+  proj_http=$(jfrog_http_status GET "/access/api/v1/projects/${demo_name}")
+  if [[ "${proj_http}" == "20"* ]]; then
+    local in_state
+    in_state=$(terraform -chdir="${DEMO_DIR}" state list 2>/dev/null | grep -c '^project\.demo$' || true)
+    if [[ "${in_state}" -eq 0 ]]; then
+      echo "  Project '${demo_name}' exists but is not in Terraform state — importing..."
+      terraform -chdir="${DEMO_DIR}" import \
+        $(base_var_file_args) \
+        -var-file="${tfvars}" \
+        project.demo "${demo_name}" > /dev/null 2>&1 || true
+    fi
+  fi
 
   echo "==> Applying demo '${name}'..."
   terraform -chdir="${DEMO_DIR}" apply \
     $(base_var_file_args) \
-    -var-file="${DEMOS_DIR}/${name}.tfvars" \
+    -var-file="${tfvars}" \
     "${@:2}"
 
   echo ""
@@ -296,33 +528,94 @@ cmd_destroy() {
   ensure_demo_tfvars "${name}"
   parse_jfrog_creds
 
-  init_demo "${name}"
-  generate_curation_override "${name}"
+  setup_demo "${name}"
 
-  # JFrog auto-creates a <demo_name>-build-info repository when a project is
-  # provisioned. This repo is project-locked (cannot be detached or deleted
-  # independently), and the standard project DELETE API returns 400 "Project
-  # containing resources can't be removed" because of it. The only way to clean
-  # it up is to use DELETE /access/api/v1/projects/{key}?deleteRepos=true, which
-  # atomically removes the build-info repo and the project in one call.
-  # We do this before running terraform destroy so the project.demo resource
-  # deletion (which calls the standard DELETE without the flag) doesn't fail.
+  local tfvars="${DEMOS_DIR}/${name}.tfvars"
   local demo_name
-  demo_name=$(grep -E '^\s*demo_name\s*=' "${DEMOS_DIR}/${name}.tfvars" | head -1 \
-    | sed 's/.*= *"\([^"]*\)".*/\1/')
-  local project_url="${JFROG_URL}/access/api/v1/projects/${demo_name}?deleteRepos=true"
-  echo "==> Pre-deleting JFrog project '${demo_name}' (removes auto-created build-info repo)..."
-  if curl -sf -X DELETE -H "Authorization: Bearer ${JFROG_TOKEN}" "${project_url}" \
-       2>/dev/null; then
-    echo "Project '${demo_name}' deleted via API."
-  else
-    echo "Project '${demo_name}' already gone or not found – continuing."
-  fi
+  demo_name=$(read_tfvar "demo_name" "${tfvars}")
+  local build_info_repo="${demo_name}-build-info"
+
+  # JFrog auto-creates a <demo_name>-build-info repo when a project is
+  # provisioned. The project also inherits PREDEFINED and CUSTOM_GLOBAL roles
+  # from the platform — these can't be removed and block project deletion via
+  # the Access API on shared instances. Strategy:
+  #  1. Detach all repos from the project (clear projectKey).
+  #  2. Delete the unmanaged build-info repo.
+  #  3. Attempt project deletion via Access API.
+  #  4. If it fails (inherited roles), remove project.demo from Terraform state
+  #     so `terraform destroy` skips it and cleans up everything else.
+  echo "==> Pre-cleanup for JFrog project '${demo_name}'..."
+
+  # Step 1: Detach all repos from the project by clearing projectKey via the
+  # Artifactory API. Done in a single Python process for efficiency.
+  local all_repos_json
+  all_repos_json=$(jfrog_get "/artifactory/api/repositories?project=${demo_name}") || all_repos_json="[]"
+
+  python3 -c "
+import json, sys, subprocess
+
+art        = json.loads(sys.argv[1])
+build_info = sys.argv[2]
+token      = sys.argv[3]
+url        = sys.argv[4]
+
+type_map = {r.get('key',''): r.get('type','LOCAL').lower() for r in art}
+seen, repos = set(), []
+for r in art:
+    k = r.get('key','')
+    if k and k not in seen:
+        seen.add(k); repos.append(k)
+if build_info not in seen:
+    repos.append(build_info)
+
+def curl_status(*args):
+    return subprocess.run(list(args), capture_output=True, text=True).stdout.strip()
+
+for key in repos:
+    rtype = type_map.get(key, 'local')
+    code  = curl_status(
+        'curl','-s','-o','/dev/null','-w','%{http_code}','-X','POST',
+        '-H','Authorization: Bearer '+token,
+        '-H','Content-Type: application/json',
+        url+'/artifactory/api/repositories/'+key,
+        '-d', json.dumps({'key':key,'rclass':rtype,'projectKey':''}))
+    status = 'cleared' if code.startswith('20') else ('not found' if code=='404' else f'HTTP {code}')
+    print(f'  {key}: {status}')
+" "${all_repos_json}" "${build_info_repo}" "${JFROG_TOKEN}" "${JFROG_URL}" 2>&1 || true
+
+  # Step 2: Delete the build-info repo (unmanaged by Terraform).
+  local del_bi_http
+  del_bi_http=$(jfrog_http_status DELETE "/artifactory/api/repositories/${build_info_repo}")
+  case "${del_bi_http}" in
+    20*) echo "  Build-info repo '${build_info_repo}' deleted." ;;
+    404) echo "  Build-info repo '${build_info_repo}' already gone." ;;
+    *)   echo "  Note: build-info repo delete returned HTTP ${del_bi_http}." >&2 ;;
+  esac
+
+  # Step 3: Try to delete the project via Access API.
+  local del_http
+  del_http=$(jfrog_http_status DELETE "/access/api/v1/projects/${demo_name}")
+  case "${del_http}" in
+    20*)
+      echo "  Project '${demo_name}' deleted."
+      ;;
+    404)
+      echo "  Project '${demo_name}' not found (already deleted)."
+      ;;
+    *)
+      # On shared JFrog instances, inherited PREDEFINED/CUSTOM_GLOBAL roles
+      # block project deletion ("Project containing resources can't be removed").
+      # Remove project.demo from Terraform state so destroy can proceed.
+      echo "  Project delete returned HTTP ${del_http} (likely inherited roles blocking)."
+      echo "  Removing project.demo from Terraform state so destroy can proceed..."
+      terraform -chdir="${DEMO_DIR}" state rm project.demo > /dev/null 2>&1 || true
+      ;;
+  esac
 
   echo "==> Destroying demo '${name}' Terraform resources..."
   terraform -chdir="${DEMO_DIR}" destroy \
     $(base_var_file_args) \
-    -var-file="${DEMOS_DIR}/${name}.tfvars" \
+    -var-file="${tfvars}" \
     "${@:2}"
 
   # Remove the entire remote state folder so this demo no longer appears in
@@ -341,9 +634,7 @@ cmd_plan() {
   ensure_demo_tfvars "${name}"
   parse_jfrog_creds
 
-  init_demo "${name}"
-  generate_curation_override "${name}"
-
+  setup_demo "${name}"
   terraform -chdir="${DEMO_DIR}" plan \
     $(base_var_file_args) \
     -var-file="${DEMOS_DIR}/${name}.tfvars" \
@@ -354,8 +645,7 @@ cmd_status() {
   local name="${1:?demo name required}"
   parse_jfrog_creds
 
-  init_demo "${name}"
-  generate_curation_override "${name}"
+  setup_demo "${name}"
   terraform -chdir="${DEMO_DIR}" show
 }
 
@@ -363,8 +653,7 @@ cmd_output() {
   local name="${1:?demo name required}"
   parse_jfrog_creds
 
-  init_demo "${name}"
-  generate_curation_override "${name}"
+  setup_demo "${name}"
   terraform -chdir="${DEMO_DIR}" output
 }
 
@@ -396,18 +685,145 @@ cmd_list() {
 }
 
 # ---------------------------------------------------------------------------
+# Curation condition helpers
+# ---------------------------------------------------------------------------
+
+# List all custom curation conditions on the platform.
+cmd_list_curation_conditions() {
+  parse_jfrog_creds
+
+  echo "==> Fetching custom curation conditions from ${JFROG_URL}..."
+  local response
+  response=$(jfrog_get "/xray/api/v1/curation/conditions")
+
+  echo "${response}" | python3 -c "
+import json, sys
+r = json.load(sys.stdin)
+conditions = r.get('data', r) if isinstance(r, dict) else r
+custom = [c for c in conditions if c.get('is_custom')]
+if not custom:
+    print('No custom conditions found.')
+    sys.exit(0)
+print(f'{'ID':<6}  {'Template':<20}  {'Name'}')
+print('-' * 60)
+for c in sorted(custom, key=lambda x: int(x.get('id', 0))):
+    params = ', '.join(
+        str(p.get('value', '')) for p in c.get('param_values', [])
+    )
+    print(f\"{c.get('id',''):<6}  {c.get('condition_template_id',''):<20}  {c.get('name','')}  {params}\")
+"
+}
+
+# List catalog labels referenced by BannedLabels curation conditions.
+# The Catalog GraphQL API only supports getLabel(name: "...") — there is no
+# list-all endpoint — so we derive label names from the Xray conditions API,
+# then resolve each via getLabel for full details.
+# An optional [filter] substring matches against condition name OR label name.
+# Usage: ./demo.sh list-catalog-labels [filter]
+cmd_list_catalog_labels() {
+  local filter="${1:-}"
+  parse_jfrog_creds
+
+  echo "==> Resolving catalog labels from BannedLabels conditions on ${JFROG_URL}..."
+
+  local conditions_resp
+  conditions_resp=$(jfrog_get "/xray/api/v1/curation/conditions") || conditions_resp="[]"
+
+  # Emit tab-separated (condition_name, label_name) pairs from BannedLabels conditions.
+  local pairs
+  pairs=$(echo "${conditions_resp}" | python3 -c "
+import json, sys
+r = json.load(sys.stdin)
+conditions = r.get('data', r) if isinstance(r, dict) else r
+for c in conditions:
+    if c.get('condition_template_id') != 'BannedLabels':
+        continue
+    cname = c.get('name', '')
+    for p in c.get('param_values', []):
+        for lbl in (p.get('value') or []):
+            print(f'{cname}\t{lbl}')
+" 2>/dev/null || true)
+
+  if [[ -z "${pairs}" ]]; then
+    echo "No BannedLabels conditions found — no catalog labels to display."
+    return 0
+  fi
+
+  # Header
+  printf "%-30s  %-30s  %s\n" "Condition name" "Label name" "Label description"
+  printf "%s\n" "$(printf '%0.s-' {1..90})"
+
+  local found=0
+  while IFS=$'\t' read -r cname lbl; do
+    # Filter: substring must appear in condition name OR label name (case-sensitive).
+    if [[ -n "${filter}" && "${cname}" != *"${filter}"* && "${lbl}" != *"${filter}"* ]]; then
+      continue
+    fi
+    found=1
+    local gql_resp
+    gql_resp=$(jfrog_catalog_graphql \
+      "{\"query\":\"query { customCatalogLabel { getLabel(name: \\\"${lbl}\\\") { name description } } }\"}")
+    local desc
+    desc=$(echo "${gql_resp}" | python3 -c "
+import json, sys
+r = json.load(sys.stdin)
+l = ((r.get('data') or {}).get('customCatalogLabel') or {}).get('getLabel') or {}
+print(l.get('description', '(not found in catalog)'))
+" 2>/dev/null || echo "(lookup failed)")
+    printf "%-30s  %-30s  %s\n" "${cname}" "${lbl}" "${desc}"
+  done <<< "${pairs}"
+
+  if [[ "${found}" -eq 0 ]]; then
+    echo "No labels matched filter '${filter}'."
+  fi
+}
+
+# Create a BannedLabels curation condition and print the assigned ID.
+# condition_name defaults to "demo-banned-label"; label_name defaults to
+# condition_name with the "-label" suffix stripped (e.g. "demo-banned").
+# The label is created via the Catalog GraphQL API if it doesn't exist (idempotent).
+cmd_create_curation_condition() {
+  local condition_name="${1:-demo-banned-label}"
+  local label_name="${2:-${condition_name%-label}}"
+  parse_jfrog_creds
+
+  ensure_catalog_label "${label_name}"
+
+  echo "==> Creating BannedLabels condition '${condition_name}' (label: '${label_name}')..."
+  local condition_id
+  condition_id=$(create_curation_condition "${condition_name}" "${label_name}")
+
+  if [[ -z "${condition_id}" ]]; then
+    echo "Error: failed to create condition." >&2
+    exit 1
+  fi
+
+  echo ""
+  echo "  Condition '${condition_name}' created — ID: ${condition_id}"
+  echo ""
+  echo "  Add to your demo .tfvars:"
+  echo "    curation_banned_label_condition_id = \"${condition_id}\""
+  echo ""
+  echo "  Then apply:"
+  echo "    ./$(basename "$0") create <demo-name>"
+}
+
+# ---------------------------------------------------------------------------
 # Dispatch
 # ---------------------------------------------------------------------------
 
 case "${1:-}" in
-  bootstrap)    shift; cmd_bootstrap "$@" ;;
-  init-base)    shift; cmd_init_base "$@" ;;
-  destroy-base) shift; cmd_destroy_base "$@" ;;
-  create)       shift; cmd_create "$@" ;;
-  destroy)      shift; cmd_destroy "$@" ;;
-  plan)         shift; cmd_plan "$@" ;;
-  status)       shift; cmd_status "$@" ;;
-  output)       shift; cmd_output "$@" ;;
-  list)         cmd_list ;;
-  *)            usage ;;
+  bootstrap)                   shift; cmd_bootstrap "$@" ;;
+  init-base)                   shift; cmd_init_base "$@" ;;
+  destroy-base)                shift; cmd_destroy_base "$@" ;;
+  create)                      shift; cmd_create "$@" ;;
+  destroy)                     shift; cmd_destroy "$@" ;;
+  plan)                        shift; cmd_plan "$@" ;;
+  status)                      shift; cmd_status "$@" ;;
+  output)                      shift; cmd_output "$@" ;;
+  list)                        cmd_list ;;
+  list-curation-conditions)    cmd_list_curation_conditions ;;
+  list-catalog-labels)         shift; cmd_list_catalog_labels "$@" ;;
+  create-curation-condition)   shift; cmd_create_curation_condition "$@" ;;
+  *)                           usage ;;
 esac

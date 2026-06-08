@@ -3,8 +3,9 @@ demo_name = "acme"
 environments = ["dev", "qa", "prod"]
 
 local_repos = {
-  "npm-local"  = "npm"
-  "pypi-local" = "pypi"
+  "npm-local"    = "npm"
+  "pypi-local"   = "pypi"
+  "docker-local" = "docker"
 }
 
 remote_repos = {
@@ -16,12 +17,22 @@ remote_repos = {
     url          = "https://files.pythonhosted.org"
     package_type = "pypi"
   }
+  "docker-remote" = {
+    url          = "https://registry-1.docker.io"
+    package_type = "docker"
+  }
 }
 
-enable_curation                 = true
-curation_malicious_condition_id = "1"
-curation_immature_condition_id  = "16"
-curation_cvss_condition_id      = "3"
+enable_curation                    = true
+curation_malicious_condition_id    = "1"   # Malicious package
+curation_immature_condition_id     = "14"  # Package version is immature (permissive)
+curation_aged_condition_id         = "12"  # Package version is aged (no newer version)
+curation_critical_condition_id     = "3"   # CVE CVSS >= 9 (with or without fix)
+curation_no_license_condition_id   = "8"   # Package has no identified license
+curation_no_dockerhub_condition_id = "17"  # Image is not Docker Hub official
+# curation_banned_label_condition_id = ""  # Custom banned-label condition (org-specific).
+                                           # Query your instance for the ID; leave empty to skip.
+curation_block_repos               = []    # Repos to promote to BLOCK enforcement; empty = all_repos scope
 
 enable_dml_worker    = false
 dml_worker_repo_keys = []

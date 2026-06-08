@@ -96,21 +96,51 @@ variable "curation_malicious_condition_id" {
 }
 
 variable "curation_immature_condition_id" {
-  description = "Condition ID for the 'Package version is immature (strict)' curation condition."
+  description = "Condition ID for the 'Package version is immature (permissive)' curation condition. Defaults to the platform-wide permissive immature condition (id=14, matching SAGEN reference policies)."
   type        = string
-  default     = "16"
+  default     = "14"
 }
 
-variable "curation_cvss_condition_id" {
-  description = "Condition ID for the 'CVE with CVSS 9.0+' curation condition."
+variable "curation_aged_condition_id" {
+  description = "Condition ID for the 'Package version is aged (no newer version identified)' curation condition. Defaults to the platform-wide aged condition (id=12, matching SAGEN reference policies)."
+  type        = string
+  default     = "12"
+}
+
+variable "curation_critical_condition_id" {
+  description = "Condition ID for 'CVE with CVSS score >= 9 (with or without a fix version)' curation condition. Defaults to the platform-wide critical CVE condition (id=3, matching SAGEN reference policies)."
   type        = string
   default     = "3"
 }
 
-variable "curation_decision_owner_group" {
-  description = "Artifactory group name for curation waiver decision owners (used by immature and CVSS policies). Leave empty to auto-generate '<demo_name>-curation-waiver'. The group is created by Terraform when enable_curation is true."
+variable "curation_no_license_condition_id" {
+  description = "Condition ID for 'Package has no identified license' curation condition. Defaults to the platform-wide no-license condition (id=8, matching SAGEN reference policies)."
+  type        = string
+  default     = "8"
+}
+
+variable "curation_no_dockerhub_condition_id" {
+  description = "Condition ID for 'Image is not Docker Hub official' curation condition. Defaults to the platform-wide Docker Hub condition (id=17, matching SAGEN reference policies)."
+  type        = string
+  default     = "17"
+}
+
+variable "curation_banned_label_condition_id" {
+  description = "Condition ID for a custom banned-label curation condition. When non-empty, CUR_BANNED_LABEL_DRYRUN and CUR_BANNED_LABEL_BLOCK policies are created. Leave empty to skip (the condition is org-specific and not portable across instances)."
   type        = string
   default     = ""
+}
+
+variable "curation_decision_owner_group" {
+  description = "Artifactory group name for curation waiver decision owners (used by IMMATURE, AGED, CVE_CRITICAL, NO_LICENSE, and NO_DOCKERHUB BLOCK policies). Leave empty to auto-generate '<demo_name>-curation-waiver'. The group is created by Terraform when enable_curation is true."
+  type        = string
+  default     = ""
+}
+
+variable "curation_block_repos" {
+  description = "List of remote repository keys (full key, e.g. 'acme-npm-remote') to promote from DRYRUN to BLOCK enforcement. DRYRUN policies always apply to all curated remote repos. BLOCK policies apply only to repos in this list; when empty, BLOCK policies cover all repos."
+  type        = list(string)
+  default     = []
 }
 
 variable "enable_dml_worker" {

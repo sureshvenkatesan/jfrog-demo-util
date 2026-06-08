@@ -38,17 +38,12 @@ output "block_watch_name" {
   value       = xray_watch.block.name
 }
 
-output "curation_malicious_name" {
-  description = "Name of the malicious-package curation policy."
-  value       = var.enable_curation ? xray_curation_policy.malicious[0].name : null
+output "curation_dryrun_policy_names" {
+  description = "Names of all DRYRUN (audit-only) curation policies created for this demo."
+  value       = { for k, v in xray_curation_policy.dryrun : k => v.name }
 }
 
-output "curation_immature_name" {
-  description = "Name of the immature-package curation policy."
-  value       = var.enable_curation ? xray_curation_policy.immature[0].name : null
-}
-
-output "curation_cvss_name" {
-  description = "Name of the CVSS 9.0+ curation policy."
-  value       = var.enable_curation ? xray_curation_policy.cvss[0].name : null
+output "curation_block_policy_names" {
+  description = "Names of all BLOCK (enforcement) curation policies created for this demo."
+  value       = { for k, v in xray_curation_policy.block : k => v.name }
 }
