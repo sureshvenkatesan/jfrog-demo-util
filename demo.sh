@@ -648,6 +648,11 @@ cmd_destroy() {
     || echo "Warning: could not remove remote state at ${state_folder}."
 
   echo "Demo '${name}' destroyed."
+  echo ""
+  echo "NOTE: The JFrog project '${demo_name}' and its build-info repository were"
+  echo "      intentionally left on the platform (see README for why)."
+  echo "      To fully remove it, delete it manually from the JFrog UI:"
+  echo "      Administration → Projects → ⋮ → Delete"
 }
 
 cmd_plan() {
