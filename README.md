@@ -109,10 +109,20 @@ The following API approaches were investigated and all fail on shared JFrog inst
 | API | Result |
 |---|---|
 | `DELETE /access/api/v1/projects/{key}?deleteRepos=true` | 400 |
-| `DELETE /artifactory/api/repositories/{build-info}` | 400 |
+| `DELETE /artifactory/api/repositories/{build-info}` | 400 — "Cannot delete build info repo of existing project" |
 | `PUT /access/api/v1/projects/default/repositories/{build-info}?force=true` | 400 — "Build/Pipe info repository isn't allowed to be altered as it is unique per project" |
-| `POST /access/api/v1/projects/_/move` (move repo to global scope) | 404 — endpoint not present on this platform version |
+| `POST /access/api/v1/projects/_/move` with `target_project: "default"` | 404 — endpoint not present on this platform version |
 | `DELETE /access/api/v1/projects/{key}/roles/{CUSTOM_GLOBAL}` | 403 — Forbidden |
+
+The [Move Repository in a Project](https://docs.jfrog.com/projects/reference/attachRepositoryToProject)
+API was also attempted as a three-step sequence:
+1. Move `{key}-build-info` to the global scope (`target_project: "default"`) to break the project association
+2. Delete the now-detached build-info repo via `DELETE /artifactory/api/repositories/{build-info}`
+3. Delete the project via `DELETE /access/api/v1/projects/{key}`
+
+Step 1 fails unconditionally with HTTP 400:
+_"Build/Pipe info repository isn't allowed to be altered as it is unique per project"_ —
+the platform prevents any reassignment of a build-info repo regardless of the API used or the `force=true` flag.
 
 **Workaround:** `destroy` removes `project.demo` from Terraform state before
 running `terraform destroy`. Terraform then skips the undeletable project
