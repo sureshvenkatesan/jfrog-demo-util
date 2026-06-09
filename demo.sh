@@ -461,13 +461,14 @@ for c in conditions:
 }
 
 # Delete a catalog label by name via GraphQL.
+# Correct mutation: deleteCustomCatalogLabel(label: { name: "..." })
 # No-ops silently when the label does not exist.
 # Usage: delete_catalog_label <label_name>
 delete_catalog_label() {
   local label_name="$1"
   local resp
   resp=$(jfrog_catalog_graphql \
-    "{\"query\":\"mutation { customCatalogLabel { deleteCustomCatalogLabel(name: \\\"${label_name}\\\") { name } } }\"}")
+    "{\"query\":\"mutation { customCatalogLabel { deleteCustomCatalogLabel(label: { name: \\\"${label_name}\\\" }) } }\"}")
 
   local err
   err=$(echo "${resp}" | python3 -c "
