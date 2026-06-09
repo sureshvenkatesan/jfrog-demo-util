@@ -91,6 +91,36 @@ at rest, and team-wide access.
 ./demo.sh destroy acme -auto-approve  # Tear down without interactive prompt
 ```
 
+### Why destroy leaves the JFrog project orphaned
+
+`destroy` always succeeds, but the JFrog **project** and its auto-created
+`<demo_name>-build-info` repository are intentionally left on the platform.
+This is a known circular dependency enforced by the JFrog Access API:
+
+- The project cannot be deleted while `build-info` exists  
+  → `DELETE /access/api/v1/projects/{key}` returns HTTP 400:
+  _"Project containing resources can't be removed"_
+- The build-info repo cannot be deleted while the project exists  
+  → `DELETE /artifactory/api/repositories/{build-info}` returns HTTP 400:
+  _"Cannot delete build info repo of existing project"_
+
+The following API approaches were investigated and all fail on shared JFrog instances:
+
+| API | Result |
+|---|---|
+| `DELETE /access/api/v1/projects/{key}?deleteRepos=true` | 400 |
+| `DELETE /artifactory/api/repositories/{build-info}` | 400 |
+| `PUT /access/api/v1/projects/default/repositories/{build-info}?force=true` | 400 — "Build/Pipe info repository isn't allowed to be altered as it is unique per project" |
+| `POST /access/api/v1/projects/_/move` (move repo to global scope) | 404 — endpoint not present on this platform version |
+| `DELETE /access/api/v1/projects/{key}/roles/{CUSTOM_GLOBAL}` | 403 — Forbidden |
+
+**Workaround:** `destroy` removes `project.demo` from Terraform state before
+running `terraform destroy`. Terraform then skips the undeletable project
+resource and cleanly destroys everything else (repos, watches, policies, etc.).
+
+The orphaned project and build-info repo are automatically re-adopted on the
+next `./demo.sh create` via `terraform import project.demo <demo_name>`.
+
 ## Optional: SBOM Worker + Webhook
 
 The `base/` module can deploy a shared SBOM worker and Xray webhook. This is
