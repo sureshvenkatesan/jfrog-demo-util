@@ -113,7 +113,7 @@ The following API approaches were investigated and all fail on shared JFrog inst
 | `PUT /access/api/v1/projects/default/repositories/{build-info}?force=true` | 400 — "Build/Pipe info repository isn't allowed to be altered as it is unique per project" |
 | `POST /access/api/v1/projects/_/move` with `target_project: "default"` | 404 — endpoint not present on this platform version |
 | `DELETE /access/api/v1/projects/{key}/roles/{CUSTOM_GLOBAL}` | 403 — Forbidden |
-| `DELETE /ui/api/v1/projects/{key}?jfLoader=true` (UI internal API) | 401 — requires a browser session cookie (`ACCESSTOKEN=<session-token>`), not a programmatic access token; session tokens are only available after interactive UI login and cannot be obtained via API |
+| `DELETE /ui/api/v1/projects/{key}?jfLoader=true` with headers `Accept: application/json`, `X-Requested-With: XMLHttpRequest` and cookie `__Host-ACCESSTOKEN=<token>; __Host-REFRESHTOKEN=*` | 401 — returns 401 even with the correct `__Host-` prefixed cookie names. The UI API requires a browser-issued session token (set by the JFrog UI login flow), not a programmatic access token (Bearer JWT). The two tokens differ in OAuth grant type; there is no API to exchange one for the other. |
 
 The [Move Repository in a Project](https://docs.jfrog.com/projects/reference/attachRepositoryToProject)
 API was also attempted as a three-step sequence:
