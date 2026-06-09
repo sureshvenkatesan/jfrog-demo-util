@@ -553,20 +553,24 @@ cmd_create() {
   echo "==> Initializing demo module for '${name}'..."
   setup_demo "${name}"
 
-  # If the project already exists (orphaned from a previous destroy that couldn't
-  # delete it due to inherited roles), import it into Terraform state so apply
-  # can update it rather than fail with "already exists".
-  local proj_http
-  proj_http=$(jfrog_http_status GET "/access/api/v1/projects/${demo_name}")
-  if [[ "${proj_http}" == "20"* ]]; then
-    local in_state
-    in_state=$(terraform -chdir="${DEMO_DIR}" state list 2>/dev/null | grep -c '^project\.demo$' || true)
-    if [[ "${in_state}" -eq 0 ]]; then
-      echo "  Project '${demo_name}' exists but is not in Terraform state — importing..."
-      terraform -chdir="${DEMO_DIR}" import \
-        $(base_var_file_args) \
-        -var-file="${tfvars}" \
-        project.demo "${demo_name}" > /dev/null 2>&1 || true
+  # When enable_project = true: if the project already exists (orphaned from a
+  # previous destroy), import it so apply can update rather than fail.
+  local enable_project
+  enable_project=$(read_tfvar "enable_project" "${tfvars}")
+  enable_project="${enable_project:-true}"
+  if [[ "${enable_project}" == "true" ]]; then
+    local proj_http
+    proj_http=$(jfrog_http_status GET "/access/api/v1/projects/${demo_name}")
+    if [[ "${proj_http}" == "20"* ]]; then
+      local in_state
+      in_state=$(terraform -chdir="${DEMO_DIR}" state list 2>/dev/null | grep -c '^project\.demo\[0\]$' || true)
+      if [[ "${in_state}" -eq 0 ]]; then
+        echo "  Project '${demo_name}' exists but is not in Terraform state — importing..."
+        terraform -chdir="${DEMO_DIR}" import \
+          $(base_var_file_args) \
+          -var-file="${tfvars}" \
+          'project.demo[0]' "${demo_name}" > /dev/null 2>&1 || true
+      fi
     fi
   fi
 
@@ -592,29 +596,35 @@ cmd_destroy() {
   local demo_name
   demo_name=$(read_tfvar "demo_name" "${tfvars}")
 
-  # Workaround: circular dependency between JFrog project and its build-info repo.
-  #
-  # JFrog automatically creates <demo_name>-build-info when a project is
-  # provisioned. On shared instances this creates an unbreakable cycle:
-  #   - The project cannot be deleted while build-info exists
-  #     (Access API returns HTTP 400: "Project containing resources can't be removed").
-  #   - The build-info repo cannot be deleted while the project exists
-  #     (Artifactory API returns HTTP 400: "Cannot delete build info repo of existing project").
-  #
-  # All known API escape hatches fail on this platform:
-  #   - DELETE /access/api/v1/projects/{key}?deleteRepos=true   → 400
-  #   - DELETE /artifactory/api/repositories/{build-info}        → 400
-  #   - PUT  /access/api/v1/projects/default/repositories/{repo} → 400 ("unique per project")
-  #   - POST /access/api/v1/projects/_/move                      → 404 (endpoint absent)
-  #   - DELETE /access/api/v1/projects/{key}/roles/{CUSTOM_GLOBAL} → 403
-  #
-  # Workaround: remove project.demo from Terraform state before running destroy.
-  # Terraform then skips the project resource and cleanly deletes everything
-  # else (repos, watches, policies). The orphaned project + build-info repo
-  # are re-adopted on the next `create` via `terraform import project.demo`.
-  echo "==> Pre-cleanup: removing project.demo from Terraform state..."
-  echo "  (Workaround for project↔build-info circular dependency — see comments in demo.sh)"
-  terraform -chdir="${DEMO_DIR}" state rm project.demo > /dev/null 2>&1 || true
+  local enable_project
+  enable_project=$(read_tfvar "enable_project" "${tfvars}")
+  enable_project="${enable_project:-true}"
+
+  if [[ "${enable_project}" == "true" ]]; then
+    # Workaround: circular dependency between JFrog project and its build-info repo.
+    #
+    # JFrog automatically creates <demo_name>-build-info when a project is
+    # provisioned. On shared instances this creates an unbreakable cycle:
+    #   - The project cannot be deleted while build-info exists
+    #     (Access API returns HTTP 400: "Project containing resources can't be removed").
+    #   - The build-info repo cannot be deleted while the project exists
+    #     (Artifactory API returns HTTP 400: "Cannot delete build info repo of existing project").
+    #
+    # All known API escape hatches fail on this platform:
+    #   - DELETE /access/api/v1/projects/{key}?deleteRepos=true   → 400
+    #   - DELETE /artifactory/api/repositories/{build-info}        → 400
+    #   - PUT  /access/api/v1/projects/default/repositories/{repo} → 400 ("unique per project")
+    #   - POST /access/api/v1/projects/_/move                      → 404 (endpoint absent)
+    #   - DELETE /access/api/v1/projects/{key}/roles/{CUSTOM_GLOBAL} → 403
+    #
+    # Workaround: remove project.demo[0] from Terraform state before running destroy.
+    # Terraform then skips the project resource and cleanly deletes everything
+    # else (repos, watches, policies). The orphaned project + build-info repo
+    # are re-adopted on the next `create` via `terraform import 'project.demo[0]'`.
+    echo "==> Pre-cleanup: removing project.demo[0] from Terraform state..."
+    echo "  (Workaround for project↔build-info circular dependency — see comments in demo.sh)"
+    terraform -chdir="${DEMO_DIR}" state rm 'project.demo[0]' > /dev/null 2>&1 || true
+  fi
 
   echo "==> Destroying demo '${name}' Terraform resources..."
   terraform -chdir="${DEMO_DIR}" destroy \
@@ -648,11 +658,13 @@ cmd_destroy() {
     || echo "Warning: could not remove remote state at ${state_folder}."
 
   echo "Demo '${name}' destroyed."
-  echo ""
-  echo "NOTE: The JFrog project '${demo_name}' and its build-info repository were"
-  echo "      intentionally left on the platform (see README for why)."
-  echo "      To fully remove it, delete it manually from the JFrog UI:"
-  echo "      Administration → Projects → ⋮ → Delete"
+  if [[ "${enable_project}" == "true" ]]; then
+    echo ""
+    echo "NOTE: The JFrog project '${demo_name}' and its build-info repository were"
+    echo "      intentionally left on the platform (see README for why)."
+    echo "      To fully remove it, delete it manually from the JFrog UI:"
+    echo "      Administration → Projects → ⋮ → Delete"
+  fi
 }
 
 cmd_plan() {

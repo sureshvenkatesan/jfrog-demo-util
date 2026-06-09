@@ -84,6 +84,12 @@ variable "remote_repos" {
   }
 }
 
+variable "enable_project" {
+  description = "Whether to create a JFrog Project and scope all repositories, policies, and watches to it. Set to false to use global (project-less) repositories instead."
+  type        = bool
+  default     = true
+}
+
 variable "enable_curation" {
   description = "Whether to enable curation on remote repositories and create curation policies."
   type        = bool

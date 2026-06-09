@@ -91,6 +91,24 @@ at rest, and team-wide access.
 ./demo.sh destroy acme -auto-approve  # Tear down without interactive prompt
 ```
 
+### Running without a JFrog Project (global repositories)
+
+By default every demo creates a JFrog **Project** and scopes all repositories, Xray policies, and watches to it. If the customer's instance does not use Projects or you want a simpler setup, set `enable_project = false` in the demo's `.tfvars`:
+
+```hcl
+# demos/acme.tfvars
+enable_project = false   # skip JFrog Project; create global repositories instead
+```
+
+With `enable_project = false`:
+- No JFrog Project is created (no `project_key` on any resource).
+- Repositories and virtual repos are created at the global (instance) level.
+- Xray security policies and watches cover all repositories on the instance.
+- Curation policies are global (not scoped to a project).
+- The `destroy` workaround (`terraform state rm project.demo[0]`) and the post-destroy UI reminder are both skipped automatically.
+
+> **Note:** When switching an existing demo between `enable_project = true` and `false`, run `./demo.sh destroy acme -auto-approve` first to avoid resource conflicts.
+
 ### Why destroy leaves the JFrog project orphaned
 
 `destroy` always succeeds, but the JFrog **project** and its auto-created

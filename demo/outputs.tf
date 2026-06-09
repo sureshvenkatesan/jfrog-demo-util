@@ -1,6 +1,6 @@
 output "project_key" {
-  description = "Key of the JFrog Project created for this demo."
-  value       = project.demo.key
+  description = "Key of the JFrog Project created for this demo. Empty string when enable_project = false."
+  value       = one(project.demo[*].key)
 }
 
 output "local_repo_keys" {

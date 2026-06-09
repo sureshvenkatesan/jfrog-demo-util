@@ -23,6 +23,8 @@ remote_repos = {
   }
 }
 
+enable_project  = true  # Set to false to use global (project-less) repositories instead of a JFrog Project
+
 enable_curation                    = true
 curation_malicious_condition_id    = "1"   # Malicious package
 curation_immature_condition_id     = "14"  # Package version is immature (permissive)

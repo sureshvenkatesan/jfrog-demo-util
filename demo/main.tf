@@ -66,6 +66,11 @@ locals {
     { for k, v in artifactory_remote_ivy_repository.demo : k => v.key },
   )
 
+  # When enable_project = false these are both null, which Terraform treats as
+  # "omit the attribute", giving project-less (global) repositories and policies.
+  effective_project_key          = var.enable_project ? one(project.demo[*].key) : null
+  effective_project_environments = var.enable_project ? ["DEV"] : null
+
   # Effective group name for curation waiver decision owners.
   # Falls back to "<demo_name>-curation-waiver" when the variable is left empty.
   curation_group_name = coalesce(var.curation_decision_owner_group, "${var.demo_name}-curation-waiver")
@@ -139,6 +144,8 @@ locals {
 # ---------------------------------------------------------------------------
 
 resource "project" "demo" {
+  count = var.enable_project ? 1 : 0
+
   key          = var.demo_name
   display_name = "${var.jfrog_username}-${var.demo_name}"
   description  = "Demo project for ${var.demo_name}"
@@ -157,88 +164,88 @@ resource "project" "demo" {
 resource "artifactory_local_generic_repository" "demo" {
   for_each             = local.local_generic_repos
   key                  = each.value.repo_key
-  project_key          = project.demo.key
-  project_environments = ["DEV"]
+  project_key          = local.effective_project_key
+  project_environments = local.effective_project_environments
   xray_index           = true
 }
 
 resource "artifactory_local_npm_repository" "demo" {
   for_each             = local.local_npm_repos
   key                  = each.value.repo_key
-  project_key          = project.demo.key
-  project_environments = ["DEV"]
+  project_key          = local.effective_project_key
+  project_environments = local.effective_project_environments
   xray_index           = true
 }
 
 resource "artifactory_local_pypi_repository" "demo" {
   for_each             = local.local_pypi_repos
   key                  = each.value.repo_key
-  project_key          = project.demo.key
-  project_environments = ["DEV"]
+  project_key          = local.effective_project_key
+  project_environments = local.effective_project_environments
   xray_index           = true
 }
 
 resource "artifactory_local_maven_repository" "demo" {
   for_each             = local.local_maven_repos
   key                  = each.value.repo_key
-  project_key          = project.demo.key
-  project_environments = ["DEV"]
+  project_key          = local.effective_project_key
+  project_environments = local.effective_project_environments
   xray_index           = true
 }
 
 resource "artifactory_local_gradle_repository" "demo" {
   for_each             = local.local_gradle_repos
   key                  = each.value.repo_key
-  project_key          = project.demo.key
-  project_environments = ["DEV"]
+  project_key          = local.effective_project_key
+  project_environments = local.effective_project_environments
   xray_index           = true
 }
 
 resource "artifactory_local_go_repository" "demo" {
   for_each             = local.local_go_repos
   key                  = each.value.repo_key
-  project_key          = project.demo.key
-  project_environments = ["DEV"]
+  project_key          = local.effective_project_key
+  project_environments = local.effective_project_environments
   xray_index           = true
 }
 
 resource "artifactory_local_nuget_repository" "demo" {
   for_each             = local.local_nuget_repos
   key                  = each.value.repo_key
-  project_key          = project.demo.key
-  project_environments = ["DEV"]
+  project_key          = local.effective_project_key
+  project_environments = local.effective_project_environments
   xray_index           = true
 }
 
 resource "artifactory_local_docker_v2_repository" "demo" {
   for_each             = local.local_docker_repos
   key                  = each.value.repo_key
-  project_key          = project.demo.key
-  project_environments = ["DEV"]
+  project_key          = local.effective_project_key
+  project_environments = local.effective_project_environments
   xray_index           = true
 }
 
 resource "artifactory_local_conan_repository" "demo" {
   for_each             = local.local_conan_repos
   key                  = each.value.repo_key
-  project_key          = project.demo.key
-  project_environments = ["DEV"]
+  project_key          = local.effective_project_key
+  project_environments = local.effective_project_environments
   xray_index           = true
 }
 
 resource "artifactory_local_conda_repository" "demo" {
   for_each             = local.local_conda_repos
   key                  = each.value.repo_key
-  project_key          = project.demo.key
-  project_environments = ["DEV"]
+  project_key          = local.effective_project_key
+  project_environments = local.effective_project_environments
   xray_index           = true
 }
 
 resource "artifactory_local_ivy_repository" "demo" {
   for_each             = local.local_ivy_repos
   key                  = each.value.repo_key
-  project_key          = project.demo.key
-  project_environments = ["DEV"]
+  project_key          = local.effective_project_key
+  project_environments = local.effective_project_environments
   xray_index           = true
 }
 
@@ -250,8 +257,8 @@ resource "artifactory_remote_generic_repository" "demo" {
   for_each                = local.generic_repos
   key                     = "${var.demo_name}-${each.key}"
   url                     = each.value.url
-  project_key             = project.demo.key
-  project_environments    = ["DEV"]
+  project_key             = local.effective_project_key
+  project_environments    = local.effective_project_environments
   xray_index              = true
   store_artifacts_locally = each.value.store_artifacts_locally
 }
@@ -260,8 +267,8 @@ resource "artifactory_remote_npm_repository" "demo" {
   for_each             = local.npm_repos
   key                  = "${var.demo_name}-${each.key}"
   url                  = each.value.url
-  project_key          = project.demo.key
-  project_environments = ["DEV"]
+  project_key          = local.effective_project_key
+  project_environments = local.effective_project_environments
   xray_index           = true
   curated              = var.enable_curation
 }
@@ -270,8 +277,8 @@ resource "artifactory_remote_pypi_repository" "demo" {
   for_each             = local.pypi_repos
   key                  = "${var.demo_name}-${each.key}"
   url                  = each.value.url
-  project_key          = project.demo.key
-  project_environments = ["DEV"]
+  project_key          = local.effective_project_key
+  project_environments = local.effective_project_environments
   xray_index           = true
   curated              = var.enable_curation
 }
@@ -280,8 +287,8 @@ resource "artifactory_remote_maven_repository" "demo" {
   for_each             = local.maven_repos
   key                  = "${var.demo_name}-${each.key}"
   url                  = each.value.url
-  project_key          = project.demo.key
-  project_environments = ["DEV"]
+  project_key          = local.effective_project_key
+  project_environments = local.effective_project_environments
   xray_index           = true
   curated              = var.enable_curation
 }
@@ -290,8 +297,8 @@ resource "artifactory_remote_gradle_repository" "demo" {
   for_each             = local.gradle_repos
   key                  = "${var.demo_name}-${each.key}"
   url                  = each.value.url
-  project_key          = project.demo.key
-  project_environments = ["DEV"]
+  project_key          = local.effective_project_key
+  project_environments = local.effective_project_environments
   xray_index           = true
   curated              = var.enable_curation
 }
@@ -300,8 +307,8 @@ resource "artifactory_remote_go_repository" "demo" {
   for_each             = local.go_repos
   key                  = "${var.demo_name}-${each.key}"
   url                  = each.value.url
-  project_key          = project.demo.key
-  project_environments = ["DEV"]
+  project_key          = local.effective_project_key
+  project_environments = local.effective_project_environments
   xray_index           = true
   curated              = var.enable_curation
 }
@@ -310,8 +317,8 @@ resource "artifactory_remote_nuget_repository" "demo" {
   for_each             = local.nuget_repos
   key                  = "${var.demo_name}-${each.key}"
   url                  = each.value.url
-  project_key          = project.demo.key
-  project_environments = ["DEV"]
+  project_key          = local.effective_project_key
+  project_environments = local.effective_project_environments
   xray_index           = true
   curated              = var.enable_curation
 }
@@ -320,8 +327,8 @@ resource "artifactory_remote_docker_repository" "demo" {
   for_each             = local.docker_repos
   key                  = "${var.demo_name}-${each.key}"
   url                  = each.value.url
-  project_key          = project.demo.key
-  project_environments = ["DEV"]
+  project_key          = local.effective_project_key
+  project_environments = local.effective_project_environments
   xray_index           = true
   curated              = var.enable_curation
 }
@@ -330,8 +337,8 @@ resource "artifactory_remote_conan_repository" "demo" {
   for_each             = local.conan_repos
   key                  = "${var.demo_name}-${each.key}"
   url                  = each.value.url
-  project_key          = project.demo.key
-  project_environments = ["DEV"]
+  project_key          = local.effective_project_key
+  project_environments = local.effective_project_environments
   xray_index           = true
   curated              = var.enable_curation
 }
@@ -340,8 +347,8 @@ resource "artifactory_remote_conda_repository" "demo" {
   for_each             = local.conda_repos
   key                  = "${var.demo_name}-${each.key}"
   url                  = each.value.url
-  project_key          = project.demo.key
-  project_environments = ["DEV"]
+  project_key          = local.effective_project_key
+  project_environments = local.effective_project_environments
   xray_index           = true
 }
 
@@ -349,8 +356,8 @@ resource "artifactory_remote_ivy_repository" "demo" {
   for_each             = local.ivy_repos
   key                  = "${var.demo_name}-${each.key}"
   url                  = each.value.url
-  project_key          = project.demo.key
-  project_environments = ["DEV"]
+  project_key          = local.effective_project_key
+  project_environments = local.effective_project_environments
   xray_index           = true
 }
 
@@ -361,7 +368,7 @@ resource "artifactory_remote_ivy_repository" "demo" {
 resource "artifactory_virtual_generic_repository" "demo" {
   count                   = length(local.local_generic_repos) + length(local.generic_repos) > 0 ? 1 : 0
   key                     = "${var.demo_name}-generic-virtual"
-  project_key             = project.demo.key
+  project_key             = local.effective_project_key
   default_deployment_repo = try(artifactory_local_generic_repository.demo["dev-generic-local"].key, null)
   repositories = concat(
     [for r in artifactory_local_generic_repository.demo : r.key],
@@ -372,7 +379,7 @@ resource "artifactory_virtual_generic_repository" "demo" {
 resource "artifactory_virtual_npm_repository" "demo" {
   count                   = length(local.local_npm_repos) + length(local.npm_repos) > 0 ? 1 : 0
   key                     = "${var.demo_name}-npm-virtual"
-  project_key             = project.demo.key
+  project_key             = local.effective_project_key
   default_deployment_repo = try(artifactory_local_npm_repository.demo["dev-npm-local"].key, null)
   repositories = concat(
     [for r in artifactory_local_npm_repository.demo : r.key],
@@ -383,7 +390,7 @@ resource "artifactory_virtual_npm_repository" "demo" {
 resource "artifactory_virtual_pypi_repository" "demo" {
   count                   = length(local.local_pypi_repos) + length(local.pypi_repos) > 0 ? 1 : 0
   key                     = "${var.demo_name}-pypi-virtual"
-  project_key             = project.demo.key
+  project_key             = local.effective_project_key
   default_deployment_repo = try(artifactory_local_pypi_repository.demo["dev-pypi-local"].key, null)
   repositories = concat(
     [for r in artifactory_local_pypi_repository.demo : r.key],
@@ -394,7 +401,7 @@ resource "artifactory_virtual_pypi_repository" "demo" {
 resource "artifactory_virtual_maven_repository" "demo" {
   count                   = length(local.local_maven_repos) + length(local.maven_repos) > 0 ? 1 : 0
   key                     = "${var.demo_name}-maven-virtual"
-  project_key             = project.demo.key
+  project_key             = local.effective_project_key
   default_deployment_repo = try(artifactory_local_maven_repository.demo["dev-maven-local"].key, null)
   repositories = concat(
     [for r in artifactory_local_maven_repository.demo : r.key],
@@ -405,7 +412,7 @@ resource "artifactory_virtual_maven_repository" "demo" {
 resource "artifactory_virtual_gradle_repository" "demo" {
   count                   = length(local.local_gradle_repos) + length(local.gradle_repos) > 0 ? 1 : 0
   key                     = "${var.demo_name}-gradle-virtual"
-  project_key             = project.demo.key
+  project_key             = local.effective_project_key
   default_deployment_repo = try(artifactory_local_gradle_repository.demo["dev-gradle-local"].key, null)
   repositories = concat(
     [for r in artifactory_local_gradle_repository.demo : r.key],
@@ -416,7 +423,7 @@ resource "artifactory_virtual_gradle_repository" "demo" {
 resource "artifactory_virtual_go_repository" "demo" {
   count                   = length(local.local_go_repos) + length(local.go_repos) > 0 ? 1 : 0
   key                     = "${var.demo_name}-go-virtual"
-  project_key             = project.demo.key
+  project_key             = local.effective_project_key
   default_deployment_repo = try(artifactory_local_go_repository.demo["dev-go-local"].key, null)
   repositories = concat(
     [for r in artifactory_local_go_repository.demo : r.key],
@@ -427,7 +434,7 @@ resource "artifactory_virtual_go_repository" "demo" {
 resource "artifactory_virtual_nuget_repository" "demo" {
   count                   = length(local.local_nuget_repos) + length(local.nuget_repos) > 0 ? 1 : 0
   key                     = "${var.demo_name}-nuget-virtual"
-  project_key             = project.demo.key
+  project_key             = local.effective_project_key
   default_deployment_repo = try(artifactory_local_nuget_repository.demo["dev-nuget-local"].key, null)
   repositories = concat(
     [for r in artifactory_local_nuget_repository.demo : r.key],
@@ -438,7 +445,7 @@ resource "artifactory_virtual_nuget_repository" "demo" {
 resource "artifactory_virtual_docker_repository" "demo" {
   count                   = length(local.local_docker_repos) + length(local.docker_repos) > 0 ? 1 : 0
   key                     = "${var.demo_name}-docker-virtual"
-  project_key             = project.demo.key
+  project_key             = local.effective_project_key
   default_deployment_repo = try(artifactory_local_docker_v2_repository.demo["dev-docker-local"].key, null)
   repositories = concat(
     [for r in artifactory_local_docker_v2_repository.demo : r.key],
@@ -449,7 +456,7 @@ resource "artifactory_virtual_docker_repository" "demo" {
 resource "artifactory_virtual_conan_repository" "demo" {
   count                   = length(local.local_conan_repos) + length(local.conan_repos) > 0 ? 1 : 0
   key                     = "${var.demo_name}-conan-virtual"
-  project_key             = project.demo.key
+  project_key             = local.effective_project_key
   default_deployment_repo = try(artifactory_local_conan_repository.demo["dev-conan-local"].key, null)
   repositories = concat(
     [for r in artifactory_local_conan_repository.demo : r.key],
@@ -460,7 +467,7 @@ resource "artifactory_virtual_conan_repository" "demo" {
 resource "artifactory_virtual_conda_repository" "demo" {
   count                   = length(local.local_conda_repos) + length(local.conda_repos) > 0 ? 1 : 0
   key                     = "${var.demo_name}-conda-virtual"
-  project_key             = project.demo.key
+  project_key             = local.effective_project_key
   default_deployment_repo = try(artifactory_local_conda_repository.demo["dev-conda-local"].key, null)
   repositories = concat(
     [for r in artifactory_local_conda_repository.demo : r.key],
@@ -471,7 +478,7 @@ resource "artifactory_virtual_conda_repository" "demo" {
 resource "artifactory_virtual_ivy_repository" "demo" {
   count                   = length(local.local_ivy_repos) + length(local.ivy_repos) > 0 ? 1 : 0
   key                     = "${var.demo_name}-ivy-virtual"
-  project_key             = project.demo.key
+  project_key             = local.effective_project_key
   default_deployment_repo = try(artifactory_local_ivy_repository.demo["dev-ivy-local"].key, null)
   repositories = concat(
     [for r in artifactory_local_ivy_repository.demo : r.key],
@@ -487,7 +494,7 @@ resource "xray_security_policy" "dry_run" {
   name        = "${var.demo_name}-dry-run"
   description = ""
   type        = "security"
-  project_key = project.demo.key
+  project_key = local.effective_project_key
 
   rule {
     name     = "malicious-packages"
@@ -537,7 +544,7 @@ resource "xray_security_policy" "block" {
   name        = "${var.demo_name}-block"
   description = ""
   type        = "security"
-  project_key = project.demo.key
+  project_key = local.effective_project_key
 
   rule {
     name     = "malicious-packages"
@@ -588,7 +595,7 @@ resource "xray_security_policy" "block" {
 resource "xray_watch" "dry_run" {
   name        = "${var.demo_name}-dry-run-watch"
   active      = true
-  project_key = project.demo.key
+  project_key = local.effective_project_key
 
   watch_resource {
     type = "all-repos"
@@ -607,7 +614,7 @@ resource "xray_watch" "dry_run" {
 resource "xray_watch" "block" {
   name        = "${var.demo_name}-block-watch"
   active      = true
-  project_key = project.demo.key
+  project_key = local.effective_project_key
 
   watch_resource {
     type = "all-repos"
