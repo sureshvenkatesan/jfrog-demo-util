@@ -23,7 +23,8 @@ remote_repos = {
   }
 }
 
-enable_project = true   # Set to false to use global (project-less) repositories instead of a JFrog Project
+# Set to false to use global (project-less) repositories instead of a JFrog Project
+enable_project = true
 
 enable_curation                    = true
 curation_malicious_condition_id    = "1"   # Malicious package

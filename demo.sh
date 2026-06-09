@@ -129,11 +129,12 @@ read_tfvar() {
 }
 
 # Read enable_project from a tfvars file; defaults to "true" when absent.
+# Strips inline comments (# ...) before parsing so "true  # comment" → "true".
 # Usage: read_enable_project <tfvars-file>
 read_enable_project() {
   local val
   val=$(grep -E '^\s*enable_project\s*=' "${1}" | head -1 \
-    | sed 's/.*=\s*//' | tr -d ' "' || true)
+    | sed 's/.*=\s*//' | sed 's/[[:space:]]*#.*//' | tr -d ' "' || true)
   echo "${val:-true}"
 }
 
