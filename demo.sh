@@ -533,84 +533,30 @@ cmd_destroy() {
   local tfvars="${DEMOS_DIR}/${name}.tfvars"
   local demo_name
   demo_name=$(read_tfvar "demo_name" "${tfvars}")
-  local build_info_repo="${demo_name}-build-info"
 
-  # JFrog auto-creates a <demo_name>-build-info repo when a project is
-  # provisioned. The project also inherits PREDEFINED and CUSTOM_GLOBAL roles
-  # from the platform — these can't be removed and block project deletion via
-  # the Access API on shared instances. Strategy:
-  #  1. Detach all repos from the project (clear projectKey).
-  #  2. Delete the unmanaged build-info repo.
-  #  3. Attempt project deletion via Access API.
-  #  4. If it fails (inherited roles), remove project.demo from Terraform state
-  #     so `terraform destroy` skips it and cleans up everything else.
-  echo "==> Pre-cleanup for JFrog project '${demo_name}'..."
-
-  # Step 1: Detach all repos from the project by clearing projectKey via the
-  # Artifactory API. Done in a single Python process for efficiency.
-  local all_repos_json
-  all_repos_json=$(jfrog_get "/artifactory/api/repositories?project=${demo_name}") || all_repos_json="[]"
-
-  python3 -c "
-import json, sys, subprocess
-
-art        = json.loads(sys.argv[1])
-build_info = sys.argv[2]
-token      = sys.argv[3]
-url        = sys.argv[4]
-
-type_map = {r.get('key',''): r.get('type','LOCAL').lower() for r in art}
-seen, repos = set(), []
-for r in art:
-    k = r.get('key','')
-    if k and k not in seen:
-        seen.add(k); repos.append(k)
-if build_info not in seen:
-    repos.append(build_info)
-
-def curl_status(*args):
-    return subprocess.run(list(args), capture_output=True, text=True).stdout.strip()
-
-for key in repos:
-    rtype = type_map.get(key, 'local')
-    code  = curl_status(
-        'curl','-s','-o','/dev/null','-w','%{http_code}','-X','POST',
-        '-H','Authorization: Bearer '+token,
-        '-H','Content-Type: application/json',
-        url+'/artifactory/api/repositories/'+key,
-        '-d', json.dumps({'key':key,'rclass':rtype,'projectKey':''}))
-    status = 'cleared' if code.startswith('20') else ('not found' if code=='404' else f'HTTP {code}')
-    print(f'  {key}: {status}')
-" "${all_repos_json}" "${build_info_repo}" "${JFROG_TOKEN}" "${JFROG_URL}" 2>&1 || true
-
-  # Step 2: Delete the build-info repo (unmanaged by Terraform).
-  local del_bi_http
-  del_bi_http=$(jfrog_http_status DELETE "/artifactory/api/repositories/${build_info_repo}")
-  case "${del_bi_http}" in
-    20*) echo "  Build-info repo '${build_info_repo}' deleted." ;;
-    404) echo "  Build-info repo '${build_info_repo}' already gone." ;;
-    *)   echo "  Note: build-info repo delete returned HTTP ${del_bi_http}." >&2 ;;
-  esac
-
-  # Step 3: Try to delete the project via Access API.
-  local del_http
-  del_http=$(jfrog_http_status DELETE "/access/api/v1/projects/${demo_name}")
-  case "${del_http}" in
-    20*)
-      echo "  Project '${demo_name}' deleted."
-      ;;
-    404)
-      echo "  Project '${demo_name}' not found (already deleted)."
-      ;;
-    *)
-      # On shared JFrog instances, inherited PREDEFINED/CUSTOM_GLOBAL roles
-      # block project deletion ("Project containing resources can't be removed").
-      # Remove project.demo from Terraform state so destroy can proceed.
-      echo "  Project delete returned HTTP ${del_http} (likely inherited roles blocking)."
-      echo "  Removing project.demo from Terraform state so destroy can proceed..."
-      terraform -chdir="${DEMO_DIR}" state rm project.demo > /dev/null 2>&1 || true
-      ;;
-  esac
+  # Workaround: circular dependency between JFrog project and its build-info repo.
+  #
+  # JFrog automatically creates <demo_name>-build-info when a project is
+  # provisioned. On shared instances this creates an unbreakable cycle:
+  #   - The project cannot be deleted while build-info exists
+  #     (Access API returns HTTP 400: "Project containing resources can't be removed").
+  #   - The build-info repo cannot be deleted while the project exists
+  #     (Artifactory API returns HTTP 400: "Cannot delete build info repo of existing project").
+  #
+  # All known API escape hatches fail on this platform:
+  #   - DELETE /access/api/v1/projects/{key}?deleteRepos=true   → 400
+  #   - DELETE /artifactory/api/repositories/{build-info}        → 400
+  #   - PUT  /access/api/v1/projects/default/repositories/{repo} → 400 ("unique per project")
+  #   - POST /access/api/v1/projects/_/move                      → 404 (endpoint absent)
+  #   - DELETE /access/api/v1/projects/{key}/roles/{CUSTOM_GLOBAL} → 403
+  #
+  # Workaround: remove project.demo from Terraform state before running destroy.
+  # Terraform then skips the project resource and cleanly deletes everything
+  # else (repos, watches, policies). The orphaned project + build-info repo
+  # are re-adopted on the next `create` via `terraform import project.demo`.
+  echo "==> Pre-cleanup: removing project.demo from Terraform state..."
+  echo "  (Workaround for project↔build-info circular dependency — see comments in demo.sh)"
+  terraform -chdir="${DEMO_DIR}" state rm project.demo > /dev/null 2>&1 || true
 
   echo "==> Destroying demo '${name}' Terraform resources..."
   terraform -chdir="${DEMO_DIR}" destroy \
