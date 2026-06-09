@@ -18,6 +18,8 @@ Commands:
   bootstrap                Create the remote state backend repository (one-time setup).
   create  <demo-name>      Spin up a new demo environment.
   destroy <demo-name>      Tear down a demo environment.
+  destroy-project <demo-name>  Drop the JFrog project from Terraform state after a
+                               failed destroy (use after deleting the project from the UI).
   plan    <demo-name>      Show what would change for a demo.
   status  <demo-name>      Show current state of a demo.
   output  <demo-name>      Show Terraform outputs for a demo.
@@ -671,8 +673,9 @@ cmd_destroy() {
       echo ""
       echo "    2. Delete the project immediately from the JFrog UI:"
       echo "         Administration → Projects → ⋮ → Delete"
-      echo "       Then remove the orphaned Terraform state entry:"
-      echo "         terraform -chdir=demo state rm 'project.demo[0]'"
+      echo "       Then drop the orphaned Terraform state entry (handles credentials"
+      echo "       automatically — no TF_VAR_* env vars needed):"
+      echo "         ./$(basename "$0") destroy-project ${name}"
       echo ""
       echo "All other demo resources (repos, policies, watches, condition, label) have"
       echo "been destroyed. Only the project and its build-info repo remain."
@@ -690,6 +693,39 @@ cmd_destroy() {
     || echo "Warning: could not remove remote state at ${state_folder}."
 
   echo "Demo '${name}' destroyed."
+}
+
+# Drop the project resource from Terraform state after a failed destroy.
+#
+# Use this when `destroy` exits with a project-deletion failure and you have
+# already removed the project via the JFrog UI. It initialises the Terraform
+# backend with the correct credentials (no manual TF_VAR_* exports needed) and
+# removes the project.demo[0] entry from state so future `create` calls start
+# clean.
+#
+# Usage: ./demo.sh destroy-project <demo-name>
+cmd_destroy_project() {
+  local name="${1:?demo name required}"
+  ensure_demo_tfvars "${name}"
+  parse_jfrog_creds
+
+  local tfvars="${DEMOS_DIR}/${name}.tfvars"
+  local demo_name
+  demo_name=$(read_tfvar "demo_name" "${tfvars}")
+
+  echo "==> Initialising Terraform backend for '${name}'..."
+  setup_demo "${name}"
+
+  echo "==> Removing project.demo[0] from Terraform state..."
+  if terraform -chdir="${DEMO_DIR}" state rm 'project.demo[0]' 2>/dev/null; then
+    echo "  Done. The project has been removed from Terraform state."
+  else
+    echo "  project.demo[0] was not in state (already removed or never created)."
+  fi
+
+  echo ""
+  echo "If you have not deleted the JFrog project '${demo_name}' from the UI yet:"
+  echo "  Administration → Projects → ⋮ → Delete"
 }
 
 cmd_plan() {
@@ -881,6 +917,7 @@ case "${1:-}" in
   destroy-base)                shift; cmd_destroy_base "$@" ;;
   create)                      shift; cmd_create "$@" ;;
   destroy)                     shift; cmd_destroy "$@" ;;
+  destroy-project)             shift; cmd_destroy_project "$@" ;;
   plan)                        shift; cmd_plan "$@" ;;
   status)                      shift; cmd_status "$@" ;;
   output)                      shift; cmd_output "$@" ;;
