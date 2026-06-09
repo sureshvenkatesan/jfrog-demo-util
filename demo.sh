@@ -428,6 +428,63 @@ print(obj.get('id', '') if isinstance(obj, dict) else '')
 " 2>/dev/null || true
 }
 
+# Delete a curation condition by name (looks up the ID first).
+# No-ops silently when the condition does not exist.
+# Usage: delete_curation_condition <condition_name>
+delete_curation_condition() {
+  local condition_name="$1"
+  local cond_id
+  cond_id=$(jfrog_get "/xray/api/v1/curation/conditions" \
+    | python3 -c "
+import json, sys
+r = json.load(sys.stdin)
+conditions = r.get('data', r) if isinstance(r, dict) else r
+for c in conditions:
+    if c.get('name') == sys.argv[1]:
+        print(c.get('id', ''))
+        break
+" "${condition_name}" 2>/dev/null || true)
+
+  if [[ -z "${cond_id}" ]]; then
+    echo "  Curation condition '${condition_name}' not found — skipping."
+    return
+  fi
+
+  local http_status
+  http_status=$(jfrog_http_status DELETE "/xray/api/v1/curation/conditions/${cond_id}")
+  if [[ "${http_status}" == "20"* ]]; then
+    echo "  Curation condition '${condition_name}' (ID ${cond_id}) deleted."
+  else
+    echo "  Warning: could not delete condition '${condition_name}' (ID ${cond_id}) — HTTP ${http_status}." >&2
+    echo "           It may still be in use by a policy. Delete it manually via Administration → Curation → Conditions." >&2
+  fi
+}
+
+# Delete a catalog label by name via GraphQL.
+# No-ops silently when the label does not exist.
+# Usage: delete_catalog_label <label_name>
+delete_catalog_label() {
+  local label_name="$1"
+  local resp
+  resp=$(jfrog_catalog_graphql \
+    "{\"query\":\"mutation { customCatalogLabel { deleteCustomCatalogLabel(name: \\\"${label_name}\\\") { name } } }\"}")
+
+  local err
+  err=$(echo "${resp}" | python3 -c "
+import json, sys
+r = json.load(sys.stdin)
+errs = r.get('errors', [])
+msgs = [e.get('message','') for e in errs if 'not found' not in e.get('message','').lower() and 'does not exist' not in e.get('message','').lower()]
+print(msgs[0] if msgs else '')
+" 2>/dev/null || true)
+
+  if [[ -n "${err}" ]]; then
+    echo "  Warning: could not delete catalog label '${label_name}': ${err}" >&2
+  else
+    echo "  Catalog label '${label_name}' deleted (or did not exist)."
+  fi
+}
+
 # ---------------------------------------------------------------------------
 # Demo lifecycle
 # ---------------------------------------------------------------------------
@@ -563,6 +620,23 @@ cmd_destroy() {
     $(base_var_file_args) \
     -var-file="${tfvars}" \
     "${@:2}"
+
+  # Clean up out-of-band resources created by cmd_create (not tracked by Terraform).
+  # These must be deleted after terraform destroy so no policies reference the condition.
+  local condition_name="${demo_name}-banned-label"
+  local banned_label="${demo_name}-banned"
+  echo "==> Cleaning up BannedLabels condition '${condition_name}'..."
+  delete_curation_condition "${condition_name}"
+  echo "==> Cleaning up catalog label '${banned_label}'..."
+  delete_catalog_label "${banned_label}"
+
+  # Also comment out the condition ID in tfvars so the next create auto-provisions it.
+  if grep -qE '^\s*curation_banned_label_condition_id\s*=' "${tfvars}" 2>/dev/null; then
+    sed -i '' \
+      's|^\(.*curation_banned_label_condition_id.*\)$|# \1|' \
+      "${tfvars}"
+    echo "  Commented out curation_banned_label_condition_id in ${name}.tfvars."
+  fi
 
   # Remove the entire remote state folder so this demo no longer appears in
   # `list`. Deleting the folder (not just the .tfstate file) avoids the
