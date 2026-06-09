@@ -126,6 +126,15 @@ read_tfvar() {
     | sed 's/.*= *"\([^"]*\)".*/\1/' || true
 }
 
+# Read enable_project from a tfvars file; defaults to "true" when absent.
+# Usage: read_enable_project <tfvars-file>
+read_enable_project() {
+  local val
+  val=$(grep -E '^\s*enable_project\s*=' "${1}" | head -1 \
+    | sed 's/.*=\s*//' | tr -d ' "' || true)
+  echo "${val:-true}"
+}
+
 # ---------------------------------------------------------------------------
 # JFrog API helpers  (require parse_jfrog_creds to have been called)
 # ---------------------------------------------------------------------------
@@ -135,6 +144,16 @@ read_tfvar() {
 jfrog_get() {
   curl -sf -H "Authorization: Bearer ${JFROG_TOKEN}" \
     "${JFROG_URL}${1}" 2>/dev/null
+}
+
+# POST JSON to a JFrog API path; prints response body.
+# Usage: jfrog_post <path> <json-body>
+jfrog_post() {
+  curl -sf -X POST \
+    -H "Authorization: Bearer ${JFROG_TOKEN}" \
+    -H "Content-Type: application/json" \
+    "${JFROG_URL}${1}" \
+    -d "${2}" 2>/dev/null
 }
 
 # Call a JFrog API and return only the HTTP status code (body discarded).
@@ -413,12 +432,8 @@ for c in conditions:
 create_curation_condition() {
   local condition_name="$1" label_name="$2"
   local resp
-  resp=$(curl -sf -X POST \
-    -H "Authorization: Bearer ${JFROG_TOKEN}" \
-    -H "Content-Type: application/json" \
-    "${JFROG_URL}/xray/api/v1/curation/conditions" \
-    -d "{\"name\":\"${condition_name}\",\"risk_type\":\"security\",\"condition_template_id\":\"BannedLabels\",\"param_values\":[{\"param_id\":\"list_of_labels\",\"value\":[\"${label_name}\"]}]}" \
-    2>/dev/null) || resp=""
+  resp=$(jfrog_post "/xray/api/v1/curation/conditions" \
+    "{\"name\":\"${condition_name}\",\"risk_type\":\"security\",\"condition_template_id\":\"BannedLabels\",\"param_values\":[{\"param_id\":\"list_of_labels\",\"value\":[\"${label_name}\"]}]}") || resp=""
 
   echo "${resp}" | python3 -c "
 import json, sys
@@ -556,8 +571,7 @@ cmd_create() {
   # When enable_project = true: if the project already exists (orphaned from a
   # previous destroy), import it so apply can update rather than fail.
   local enable_project
-  enable_project=$(read_tfvar "enable_project" "${tfvars}")
-  enable_project="${enable_project:-true}"
+  enable_project=$(read_enable_project "${tfvars}")
   if [[ "${enable_project}" == "true" ]]; then
     local proj_http
     proj_http=$(jfrog_http_status GET "/access/api/v1/projects/${demo_name}")
@@ -597,8 +611,7 @@ cmd_destroy() {
   demo_name=$(read_tfvar "demo_name" "${tfvars}")
 
   local enable_project
-  enable_project=$(read_tfvar "enable_project" "${tfvars}")
-  enable_project="${enable_project:-true}"
+  enable_project=$(read_enable_project "${tfvars}")
 
   if [[ "${enable_project}" == "true" ]]; then
     # Workaround: circular dependency between JFrog project and its build-info repo.
