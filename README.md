@@ -109,20 +109,51 @@ With `enable_project = false`:
 
 > **Note:** When switching an existing demo between `enable_project = true` and `false`, run `./demo.sh destroy acme -auto-approve` first to avoid resource conflicts.
 
-### Why destroy leaves the JFrog project orphaned
+### JFrog Project deletion and SaaS timing
 
-`destroy` always succeeds, but the JFrog **project** and its auto-created
-`<demo_name>-build-info` repository are intentionally left on the platform.
-This is a known circular dependency enforced by the JFrog Access API:
+`destroy` deletes all managed resources (repos, policies, watches) via
+`terraform destroy`, then immediately attempts to delete the JFrog **project**
+via `DELETE /access/api/v1/projects/{key}`.
+
+On **JFrog SaaS**, the platform auto-creates a `<demo_name>-build-info`
+repository when a project is provisioned. Even after all other repos are
+removed, the build-info repo can take **up to 15 minutes** to be
+garbage-collected. Until it is, project deletion returns HTTP 400:
+_"Project containing resources can't be removed"_.
+
+**If the project deletion fails**, `destroy` exits with:
+
+```
+WARNING: Could not delete JFrog project 'acme' (HTTP 400).
+  On JFrog SaaS instances the auto-created build-info repository can take
+  up to 15 minutes to be garbage-collected before the project can be removed.
+
+  Options:
+    1. Wait ~15 minutes, then re-run:
+         ./demo.sh destroy acme -auto-approve
+       Terraform will find nothing to destroy and only the project delete
+       will be retried.
+
+    2. Delete the project immediately from the JFrog UI:
+         Administration → Projects → ⋮ → Delete
+       Then remove the orphaned Terraform state entry:
+         terraform -chdir=demo state rm 'project.demo[0]'
+```
+
+All other resources (repos, policies, watches, BannedLabels condition, catalog
+label) are cleaned up on the **first** `destroy` run regardless. The retry
+only re-attempts the project API delete and removes the remote state entry.
+
+#### Why the project cannot be deleted immediately
+
+The circular dependency enforced by the JFrog Access API:
 
 - The project cannot be deleted while `build-info` exists  
-  → `DELETE /access/api/v1/projects/{key}` returns HTTP 400:
-  _"Project containing resources can't be removed"_
+  → HTTP 400: _"Project containing resources can't be removed"_
 - The build-info repo cannot be deleted while the project exists  
-  → `DELETE /artifactory/api/repositories/{build-info}` returns HTTP 400:
-  _"Cannot delete build info repo of existing project"_
+  → HTTP 400: _"Cannot delete build info repo of existing project"_
 
-The following API approaches were investigated and all fail on shared JFrog instances:
+Other API escape hatches investigated (all fail):
 
 | API | Result |
 |---|---|
@@ -131,27 +162,6 @@ The following API approaches were investigated and all fail on shared JFrog inst
 | `PUT /access/api/v1/projects/default/repositories/{build-info}?force=true` | 400 — "Build/Pipe info repository isn't allowed to be altered as it is unique per project" |
 | `POST /access/api/v1/projects/_/move` with `target_project: "default"` | 404 — endpoint not present on this platform version |
 | `DELETE /access/api/v1/projects/{key}/roles/{CUSTOM_GLOBAL}` | 403 — Forbidden |
-
-The [Move Repository in a Project](https://docs.jfrog.com/projects/reference/attachRepositoryToProject)
-API was also attempted as a three-step sequence:
-1. Move `{key}-build-info` to the global scope (`target_project: "default"`) to break the project association
-2. Delete the now-detached build-info repo via `DELETE /artifactory/api/repositories/{build-info}`
-3. Delete the project via `DELETE /access/api/v1/projects/{key}`
-
-Step 1 fails unconditionally with HTTP 400:
-_"Build/Pipe info repository isn't allowed to be altered as it is unique per project"_ —
-the platform prevents any reassignment of a build-info repo regardless of the API used or the `force=true` flag.
-
-**Workaround:** `destroy` removes `project.demo` from Terraform state before
-running `terraform destroy`. Terraform then skips the undeletable project
-resource and cleanly destroys everything else (repos, watches, policies, etc.).
-
-The orphaned project and build-info repo are automatically re-adopted on the
-next `./demo.sh create` via `terraform import project.demo <demo_name>`.
-
-> **After running `./demo.sh destroy acme -auto-approve`**, if you want to
-> fully remove the project from the platform, delete it manually from the
-> JFrog UI: **Administration → Projects → ⋮ → Delete**.
 
 ## Optional: SBOM Worker + Webhook
 

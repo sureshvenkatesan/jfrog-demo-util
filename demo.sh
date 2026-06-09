@@ -614,28 +614,13 @@ cmd_destroy() {
   enable_project=$(read_enable_project "${tfvars}")
 
   if [[ "${enable_project}" == "true" ]]; then
-    # Workaround: circular dependency between JFrog project and its build-info repo.
-    #
-    # JFrog automatically creates <demo_name>-build-info when a project is
-    # provisioned. On shared instances this creates an unbreakable cycle:
-    #   - The project cannot be deleted while build-info exists
-    #     (Access API returns HTTP 400: "Project containing resources can't be removed").
-    #   - The build-info repo cannot be deleted while the project exists
-    #     (Artifactory API returns HTTP 400: "Cannot delete build info repo of existing project").
-    #
-    # All known API escape hatches fail on this platform:
-    #   - DELETE /access/api/v1/projects/{key}?deleteRepos=true   → 400
-    #   - DELETE /artifactory/api/repositories/{build-info}        → 400
-    #   - PUT  /access/api/v1/projects/default/repositories/{repo} → 400 ("unique per project")
-    #   - POST /access/api/v1/projects/_/move                      → 404 (endpoint absent)
-    #   - DELETE /access/api/v1/projects/{key}/roles/{CUSTOM_GLOBAL} → 403
-    #
-    # Workaround: remove project.demo[0] from Terraform state before running destroy.
-    # Terraform then skips the project resource and cleanly deletes everything
-    # else (repos, watches, policies). The orphaned project + build-info repo
-    # are re-adopted on the next `create` via `terraform import 'project.demo[0]'`.
+    # Drop the project resource from Terraform state so that `terraform destroy`
+    # can complete cleanly. Terraform would otherwise try to delete the project
+    # while JFrog's auto-created <demo_name>-build-info repo is still attached,
+    # which the Access API rejects (HTTP 400: "Project containing resources can't
+    # be removed"). We attempt the real API project delete below, after all other
+    # resources have been torn down.
     echo "==> Pre-cleanup: removing project.demo[0] from Terraform state..."
-    echo "  (Workaround for project↔build-info circular dependency — see comments in demo.sh)"
     terraform -chdir="${DEMO_DIR}" state rm 'project.demo[0]' > /dev/null 2>&1 || true
   fi
 
@@ -646,7 +631,7 @@ cmd_destroy() {
     "${@:2}"
 
   # Clean up out-of-band resources created by cmd_create (not tracked by Terraform).
-  # These must be deleted after terraform destroy so no policies reference the condition.
+  # Done here regardless of project deletion outcome so they are never left orphaned.
   local condition_name="${demo_name}-banned-label"
   local banned_label="${demo_name}-banned"
   echo "==> Cleaning up BannedLabels condition '${condition_name}'..."
@@ -654,7 +639,7 @@ cmd_destroy() {
   echo "==> Cleaning up catalog label '${banned_label}'..."
   delete_catalog_label "${banned_label}"
 
-  # Also comment out the condition ID in tfvars so the next create auto-provisions it.
+  # Comment out the condition ID in tfvars so the next create auto-provisions it.
   if grep -qE '^\s*curation_banned_label_condition_id\s*=' "${tfvars}" 2>/dev/null; then
     sed -i '' \
       's|^\(.*curation_banned_label_condition_id.*\)$|# \1|' \
@@ -662,22 +647,49 @@ cmd_destroy() {
     echo "  Commented out curation_banned_label_condition_id in ${name}.tfvars."
   fi
 
+  # Attempt to delete the JFrog project via the Access API now that all managed
+  # repos and policies have been removed. On JFrog SaaS the build-info repo
+  # persists for ~15 minutes after resource deletion before the platform
+  # garbage-collects it, so the first attempt may return HTTP 400.
+  if [[ "${enable_project}" == "true" ]]; then
+    echo "==> Attempting to delete JFrog project '${demo_name}'..."
+    local proj_http
+    proj_http=$(jfrog_http_status DELETE "/access/api/v1/projects/${demo_name}")
+    if [[ "${proj_http}" == "20"* || "${proj_http}" == "404" ]]; then
+      echo "  Project '${demo_name}' deleted."
+    else
+      echo ""
+      echo "WARNING: Could not delete JFrog project '${demo_name}' (HTTP ${proj_http})."
+      echo "  On JFrog SaaS instances the auto-created build-info repository can take"
+      echo "  up to 15 minutes to be garbage-collected before the project can be removed."
+      echo ""
+      echo "  Options:"
+      echo "    1. Wait ~15 minutes, then re-run:"
+      echo "         ./$(basename "$0") destroy ${name} -auto-approve"
+      echo "       Terraform will find nothing to destroy and only the project delete"
+      echo "       will be retried."
+      echo ""
+      echo "    2. Delete the project immediately from the JFrog UI:"
+      echo "         Administration → Projects → ⋮ → Delete"
+      echo "       Then remove the orphaned Terraform state entry:"
+      echo "         terraform -chdir=demo state rm 'project.demo[0]'"
+      echo ""
+      echo "All other demo resources (repos, policies, watches, condition, label) have"
+      echo "been destroyed. Only the project and its build-info repo remain."
+      exit 1
+    fi
+  fi
+
   # Remove the entire remote state folder so this demo no longer appears in
-  # `list`. Deleting the folder (not just the .tfstate file) avoids the
-  # Artifactory empty-folder ghost that the storage listing still returns.
+  # `list`. Only reached when all cleanup (including project deletion) succeeded.
+  # Deleting the folder (not just the .tfstate file) avoids the Artifactory
+  # empty-folder ghost that the storage listing still returns.
   local state_folder="${JFROG_URL}/artifactory/${STATE_REPO}/${demo_name}/"
   curl -sf -X DELETE -u "${TF_HTTP_USERNAME}:${JFROG_TOKEN}" "${state_folder}" 2>/dev/null \
     && echo "Remote state for '${demo_name}' removed." \
     || echo "Warning: could not remove remote state at ${state_folder}."
 
   echo "Demo '${name}' destroyed."
-  if [[ "${enable_project}" == "true" ]]; then
-    echo ""
-    echo "NOTE: The JFrog project '${demo_name}' and its build-info repository were"
-    echo "      intentionally left on the platform (see README for why)."
-    echo "      To fully remove it, delete it manually from the JFrog UI:"
-    echo "      Administration → Projects → ⋮ → Delete"
-  fi
 }
 
 cmd_plan() {
