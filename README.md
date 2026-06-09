@@ -89,6 +89,12 @@ at rest, and team-wide access.
 ./demo.sh list            # List all active demos (queries Artifactory)
 ./demo.sh destroy acme              # Tear down a demo (interactive confirmation)
 ./demo.sh destroy acme -auto-approve  # Tear down without interactive prompt
+
+# If destroy exits with a project-deletion failure (SaaS ~15 min delay):
+./demo.sh destroy acme -auto-approve  # retry — TF destroy is a no-op, only project delete is retried
+
+# Or: delete the project from the UI first, then drop it from Terraform state:
+./demo.sh destroy-project acme        # sets credentials automatically; no TF_VAR_* exports needed
 ```
 
 ### Running without a JFrog Project (global repositories)
